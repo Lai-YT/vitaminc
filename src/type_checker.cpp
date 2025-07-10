@@ -600,6 +600,10 @@ void TypeChecker::Visit(UnaryExprNode& unary_expr) {
       unary_expr.type =
           dynamic_cast<PtrType&>(*unary_expr.operand->type).base_type().Clone();
       break;
+    case UnaryOperator::kSizeof:
+      // FIXME: `sizeof` returns `size_t` (unsigned), but we currently use `int`.
+      unary_expr.type = std::make_unique<PrimType>(PrimitiveType::kInt);
+      break;
     default:
       unary_expr.type = unary_expr.operand->type->Clone();
       break;
