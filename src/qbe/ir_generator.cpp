@@ -948,7 +948,9 @@ void QbeIrGenerator::Visit(const RecordMemExprNode& mem_expr) {
 }
 
 void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
-  unary_expr.operand->Accept(*this);
+  if (unary_expr.op != UnaryOperator::kSizeof) {
+    unary_expr.operand->Accept(*this);
+  }
   switch (unary_expr.op) {
     case UnaryOperator::kIncr:
     case UnaryOperator::kDecr: {
@@ -1038,6 +1040,12 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
       }
       num_recorder.Record(res_num);
       reg_num_to_id_num[res_num] = reg_num;
+    } break;
+    case UnaryOperator::kSizeof: {
+      int res_num = NextLocalNum();
+      WriteInstr_("{} =w copy {}", FuncScopeTemp{res_num},
+                  unary_expr.operand->type->size());
+      num_recorder.Record(res_num);
     } break;
     default:
       break;
