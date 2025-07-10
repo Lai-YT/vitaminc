@@ -74,6 +74,8 @@ std::string GetUnaryOperator(UnaryOperator op) {
       return "*";
     case UnaryOperator::kBitComp:
       return "~";
+    case UnaryOperator::kSizeof:
+      return "sizeof";
     default:
       return "Unknown";
   }

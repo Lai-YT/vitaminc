@@ -34,6 +34,7 @@ enum class UnaryOperator : std::uint8_t {
   kDeref,
   kNot,
   kBitComp,
+  kSizeof,
 };
 
 enum class PostfixOperator : std::uint8_t {

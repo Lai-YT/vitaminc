@@ -99,6 +99,7 @@ std::unique_ptr<Type> ResolveType(std::unique_ptr<Type> resolved_type,
 %token GOTO
 %token STRUCT UNION
 %token ENUM
+%token SIZEOF
 // increment (INCR: ++) and decrement (DECR: --)
 %token INCR DECR
 %token LOGIC_OR LOGIC_AND OR XOR
@@ -302,7 +303,8 @@ unary_expr: postfix_expr { $$ = $1; }
   | AMPERSAND unary_expr { $$ = std::make_unique<UnaryExprNode>(Loc(@1), UnaryOperator::kAddr, $2); }
   | STAR unary_expr { $$ = std::make_unique<UnaryExprNode>(Loc(@1), UnaryOperator::kDeref, $2); }
   | TILDE unary_expr { $$ = std::make_unique<UnaryExprNode>(Loc(@1), UnaryOperator::kBitComp, $2); }
-  /* TODO: sizeof */
+  | SIZEOF unary_expr { $$ = std::make_unique<UnaryExprNode>(Loc(@1), UnaryOperator::kSizeof, $2); }
+  /* TODO: sizeof (id) */
   ;
 
 /* 6.5.4 Cast operators*/

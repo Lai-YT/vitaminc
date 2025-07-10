@@ -94,6 +94,7 @@ goto { return yy::parser::make_GOTO(yylloc); }
 struct { return yy::parser::make_STRUCT(yylloc); }
 union { return yy::parser::make_UNION(yylloc); }
 enum { return yy::parser::make_ENUM(yylloc); }
+sizeof { return yy::parser::make_SIZEOF(yylloc); }
 
   /* brackets */
 "(" { return yy::parser::make_LEFT_PAREN(yylloc); }
