@@ -1,4 +1,4 @@
-#include "qbe/ir_generator.hpp"
+#include "codegen/qbe/ir_generator.hpp"
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
@@ -14,10 +14,10 @@
 #include <variant>
 #include <vector>
 
-#include "ast.hpp"
-#include "operator.hpp"
-#include "qbe/sigil.hpp"
-#include "type.hpp"
+#include "ast/ast.hpp"
+#include "codegen/qbe/sigil.hpp"
+#include "support/operator.hpp"
+#include "support/type.hpp"
 
 // Since compiler-generated sigils are used more frequently, we include them
 // directly.

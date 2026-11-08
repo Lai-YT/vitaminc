@@ -7,10 +7,10 @@
 #include <utility>
 #include <vector>
 
-#include "ast.hpp"
-#include "location.hpp"
-#include "operator.hpp"
-#include "type.hpp"
+#include "ast/ast.hpp"
+#include "support/location.hpp"
+#include "support/operator.hpp"
+#include "support/type.hpp"
 
 namespace {
 /// @brief Resolves `unknown_type` with `resolved_type`, forming a new type with
@@ -37,8 +37,8 @@ std::unique_ptr<Type> ResolveType(std::unique_ptr<Type> resolved_type,
   #include <variant>
   #include <vector>
 
-  #include "ast.hpp"
-  #include "type.hpp"
+  #include "ast/ast.hpp"
+  #include "support/type.hpp"
 }
 
 // Placed after the usual contents of the parser header file.

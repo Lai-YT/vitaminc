@@ -10,14 +10,14 @@
 #include <string>
 #include <utility>
 
-#include "ast.hpp"
-#include "ast_dumper.hpp"
-#include "llvm/ir_generator.hpp"
-#include "qbe/ir_generator.hpp"
-#include "scope.hpp"
-#include "type_checker.hpp"
-#include "util.hpp"
-#include "y.tab.hpp"
+#include "ast/ast.hpp"
+#include "ast/ast_dumper.hpp"
+#include "codegen/llvm/ir_generator.hpp"
+#include "codegen/qbe/ir_generator.hpp"
+#include "frontend/type_checker.hpp"
+#include "frontend/y.tab.hpp"
+#include "support/scope.hpp"
+#include "support/util.hpp"
 
 extern FILE*
     yyin;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables):

@@ -8,9 +8,9 @@
 #include <utility>
 #include <vector>
 
-#include "ast.hpp"
-#include "qbe/sigil.hpp"
-#include "visitor.hpp"
+#include "ast/ast.hpp"
+#include "ast/visitor.hpp"
+#include "codegen/qbe/sigil.hpp"
 
 class QbeIrGenerator : public NonModifyingVisitor {
  public:

@@ -1,6 +1,6 @@
-#include "ast.hpp"
+#include "ast/ast.hpp"
 
-#include "visitor.hpp"
+#include "ast/visitor.hpp"
 
 void AstNode::Accept(NonModifyingVisitor& v) const {
   v.Visit(*this);

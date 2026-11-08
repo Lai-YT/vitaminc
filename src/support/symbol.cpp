@@ -1,4 +1,4 @@
-#include "symbol.hpp"
+#include "support/symbol.hpp"
 
 #include <map>
 #include <memory>

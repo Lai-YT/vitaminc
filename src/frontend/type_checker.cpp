@@ -1,4 +1,4 @@
-#include "type_checker.hpp"
+#include "frontend/type_checker.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -12,11 +12,11 @@
 #include <variant>
 #include <vector>
 
-#include "ast.hpp"
-#include "operator.hpp"
-#include "scope.hpp"
-#include "symbol.hpp"
-#include "type.hpp"
+#include "ast/ast.hpp"
+#include "support/operator.hpp"
+#include "support/scope.hpp"
+#include "support/symbol.hpp"
+#include "support/type.hpp"
 
 namespace {
 

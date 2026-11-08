@@ -6,7 +6,7 @@
 #include <string>
 #include <utility>
 
-#include "type.hpp"
+#include "support/type.hpp"
 
 struct SymbolEntry {
   std::string id;

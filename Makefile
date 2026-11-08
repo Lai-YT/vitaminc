@@ -8,17 +8,19 @@ LDLIBS = -lfmt $(shell llvm-config-18 --libs core)
 LEX = lex
 # C++ features are used, yacc doesn't suffice
 YACC = bison
-# -d: generate header with default name
-YFLAGS = --verbose --debug -d -Wcounterexamples -Wall
+YFLAGS = --verbose --debug -Wcounterexamples -Wall
+PARSER_DIR := src/frontend/parser
+PARSER_CPP := $(PARSER_DIR)/y.tab.cpp
+PARSER_HPP := include/frontend/y.tab.hpp
+LEX_CPP := $(PARSER_DIR)/lex.yy.cpp
 COVERAGE_DIR = $(CURDIR)/.coverage
 GCOVFLAGS = -fprofile-arcs -ftest-coverage
 
 # The Flex or Bison-generated files are not included.
-SRC := $(shell find src/ -name "*.cpp") main.cpp
-INC := $(shell find include/ -name "*.hpp")
+SRC := $(filter-out $(PARSER_CPP) $(LEX_CPP),$(shell find src/ -name "*.cpp")) main.cpp
+INC := $(filter-out $(PARSER_HPP),$(shell find include/ -name "*.hpp"))
 
-OBJS := $(SRC) lex.yy.o y.tab.o
-OBJS := $(OBJS:.cpp=.o)
+OBJS := $(SRC:.cpp=.o) $(PARSER_CPP:.cpp=.o) $(LEX_CPP:.cpp=.o)
 DEPS = $(OBJS:.o=.d)
 
 .PHONY: all clean test tidy coverage coverage-report
@@ -32,12 +34,12 @@ test: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $@ $(LDLIBS)
 
-lex.yy.cpp: lexer.l y.tab.hpp
+$(LEX_CPP): $(PARSER_DIR)/lexer.l $(PARSER_HPP)
 	$(LEX) -o $@ $<
 
-y.tab.hpp: y.tab.cpp
-y.tab.cpp: parser.y
-	$(YACC) $(YFLAGS) $< -o $@
+$(PARSER_HPP): $(PARSER_CPP)
+$(PARSER_CPP): $(PARSER_DIR)/parser.y
+	$(YACC) $(YFLAGS) --defines=$(PARSER_HPP) $< -o $@
 
 #
 # Please note that although we're handling dependencies automatically with -MMD,
@@ -45,12 +47,14 @@ y.tab.cpp: parser.y
 # dependency explicit to enforce the ordering.
 #
 
-main.o: %.o: %.cpp y.tab.hpp
+main.o: %.o: %.cpp $(PARSER_HPP)
+
+$(PARSER_CPP:.cpp=.o): CXXFLAGS += -Iinclude/frontend
 
 # Since y.tab.hpp is included by the source files, it must exist;
 # otherwise, a clang-diagnostic-error will be raised.
 
-tidy: y.tab.hpp
+tidy: $(PARSER_HPP)
 	$(CLANG_TIDY) $(CLANG_TIDY_FLAGS) -p . $(SRC) $(INC) -- $(CXXFLAGS)
 
 #
@@ -88,8 +92,10 @@ coverage-report: coverage
 	@echo "Open $(COVERAGE_DIR)/index.html in your browser to view the coverage report."
 
 clean:
-	$(RM) -r *.s *.o lex.yy.* y.tab.* *.output *.ssa *.out *.ll $(TARGET) $(OBJS) $(DEPS) \
+	$(RM) -r $(TARGET) $(OBJS) $(DEPS) \
+		$(PARSER_CPP) $(PARSER_HPP) $(LEX_CPP) \
+		$(PARSER_DIR)/y.output \
 		$(OBJS:.o=.gcda) $(OBJS:.o=.gcno) *.gcov $(COVERAGE_DIR)
-	cd test/ && $(MAKE) clean
+	$(MAKE) -C test/ clean
 
 -include $(DEPS)

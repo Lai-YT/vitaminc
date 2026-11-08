@@ -1,11 +1,11 @@
-#include "scope.hpp"
+#include "support/scope.hpp"
 
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "symbol.hpp"
+#include "support/symbol.hpp"
 
 void ScopeStack::PushScope(ScopeKind kind) {
   if (should_merge_with_next_scope_) {

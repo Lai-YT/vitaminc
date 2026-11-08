@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "symbol.hpp"
+#include "support/symbol.hpp"
 
 // 6.2.1 Scopes of identifiers
 enum class ScopeKind : std::uint8_t {

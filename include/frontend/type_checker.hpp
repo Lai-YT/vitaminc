@@ -1,9 +1,9 @@
 #ifndef TYPE_CHECKER_HPP_
 #define TYPE_CHECKER_HPP_
 
-#include "ast.hpp"
-#include "scope.hpp"
-#include "visitor.hpp"
+#include "ast/ast.hpp"
+#include "ast/visitor.hpp"
+#include "support/scope.hpp"
 
 /// @brief A modifying pass; resolves the type of expressions.
 class TypeChecker : public ModifyingVisitor {

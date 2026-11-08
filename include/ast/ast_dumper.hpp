@@ -1,9 +1,9 @@
 #ifndef AST_DUMPER_HPP_
 #define AST_DUMPER_HPP_
 
-#include "ast.hpp"
-#include "util.hpp"
-#include "visitor.hpp"
+#include "ast/ast.hpp"
+#include "ast/visitor.hpp"
+#include "support/util.hpp"
 
 class AstDumper : public NonModifyingVisitor {
  public:

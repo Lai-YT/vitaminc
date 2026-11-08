@@ -9,7 +9,7 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "y.tab.hpp"
+#include "frontend/y.tab.hpp"
 
 // Give Flex the prototype of yylex we want.
 # define YY_DECL \

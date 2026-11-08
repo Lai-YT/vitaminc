@@ -10,9 +10,9 @@
 #include <ostream>
 #include <string>
 
-#include "ast.hpp"
-#include "llvm/util.hpp"
-#include "visitor.hpp"
+#include "ast/ast.hpp"
+#include "ast/visitor.hpp"
+#include "codegen/llvm/util.hpp"
 
 class LLVMIRGenerator : public NonModifyingVisitor {
  public:

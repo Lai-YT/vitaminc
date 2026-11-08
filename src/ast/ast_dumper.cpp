@@ -1,4 +1,4 @@
-#include "ast_dumper.hpp"
+#include "ast/ast_dumper.hpp"
 
 #include <iostream>
 #include <memory>
@@ -6,9 +6,9 @@
 #include <type_traits>
 #include <variant>
 
-#include "ast.hpp"
-#include "operator.hpp"
-#include "type.hpp"
+#include "ast/ast.hpp"
+#include "support/operator.hpp"
+#include "support/type.hpp"
 
 namespace {
 

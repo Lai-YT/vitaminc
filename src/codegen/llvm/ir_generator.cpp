@@ -1,4 +1,4 @@
-#include "llvm/ir_generator.hpp"
+#include "codegen/llvm/ir_generator.hpp"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringRef.h>
@@ -30,9 +30,9 @@
 #include <variant>
 #include <vector>
 
-#include "ast.hpp"
-#include "operator.hpp"
-#include "type.hpp"
+#include "ast/ast.hpp"
+#include "support/operator.hpp"
+#include "support/type.hpp"
 
 namespace {
 

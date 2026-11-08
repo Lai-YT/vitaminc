@@ -1,4 +1,4 @@
-#include "llvm/util.hpp"
+#include "codegen/llvm/util.hpp"
 
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-#include "type.hpp"
+#include "support/type.hpp"
 
 using namespace util;
 

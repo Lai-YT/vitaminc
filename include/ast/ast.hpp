@@ -8,10 +8,10 @@
 #include <variant>
 #include <vector>
 
-#include "location.hpp"
-#include "operator.hpp"
-#include "type.hpp"
-#include "visitor.hpp"
+#include "ast/visitor.hpp"
+#include "support/location.hpp"
+#include "support/operator.hpp"
+#include "support/type.hpp"
 
 /// @brief The most general base node of the Abstract Syntax Tree.
 /// @note This is an abstract class.
