@@ -948,9 +948,11 @@ void QbeIrGenerator::Visit(const RecordMemExprNode& mem_expr) {
 }
 
 void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
-  if (unary_expr.op != UnaryOperator::kSizeof) {
-    unary_expr.operand->Accept(*this);
+  if (auto* operand =
+          std::get_if<std::unique_ptr<ExprNode>>(&unary_expr.operand)) {
+    (*operand)->Accept(*this);
   }
+
   switch (unary_expr.op) {
     case UnaryOperator::kIncr:
     case UnaryOperator::kDecr: {
@@ -962,7 +964,8 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
                                 : BinaryOperator::kSub;
       WriteInstr_("{} =w {} {}, 1", FuncScopeTemp{res_num},
                   GetBinaryOperator(arith_op), FuncScopeTemp{expr_num});
-      const auto& id_expr = dynamic_cast<IdExprNode&>(*unary_expr.operand);
+      const auto& id_expr = dynamic_cast<IdExprNode&>(
+          *std::get<std::unique_ptr<ExprNode>>(unary_expr.operand));
       WriteInstr_("storew {}, {}", FuncScopeTemp{res_num},
                   FuncScopeTemp{id_to_num.at(id_expr.id)});
       num_recorder.Record(res_num);
@@ -997,13 +1000,15 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
       num_recorder.Record(res_num);
     } break;
     case UnaryOperator::kAddr: {
-      if (unary_expr.operand->type->IsFunc()) {
+      const auto& operand =
+          std::get<std::unique_ptr<ExprNode>>(unary_expr.operand);
+      if (operand->type->IsFunc()) {
         // No-op; the function itself already evaluates to the address.
         break;
       }
       // NOTE: The operand of the address-of operator must be an lvalue, and we
       // do not support arrays now, so it must have been backed by an id.
-      assert(dynamic_cast<IdExprNode*>(unary_expr.operand.get()));
+      assert(dynamic_cast<IdExprNode*>(operand.get()));
       // The address of the id is the id itself.
       const int reg_num = num_recorder.NumOfPrevExpr();
       const int id_num = reg_num_to_id_num.at(reg_num);
@@ -1016,11 +1021,11 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
       num_recorder.Record(res_num);
     } break;
     case UnaryOperator::kDeref: {
+      const auto& operand_type =
+          std::get<std::unique_ptr<ExprNode>>(unary_expr.operand)->type;
       // Is function pointer.
-      if (unary_expr.operand->type->IsPtr() &&
-          dynamic_cast<PtrType&>(*unary_expr.operand->type)
-              .base_type()
-              .IsFunc()) {
+      if (operand_type->IsPtr() &&
+          dynamic_cast<PtrType&>(*operand_type).base_type().IsFunc()) {
         // No-op; the function itself also evaluates to the address.
         break;
       }
@@ -1043,8 +1048,18 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
     } break;
     case UnaryOperator::kSizeof: {
       int res_num = NextLocalNum();
-      WriteInstr_("{} =w copy {}", FuncScopeTemp{res_num},
-                  unary_expr.operand->type->size());
+      const auto& operand_type = std::visit(
+          [](auto&& operand) -> Type& {
+            using T = std::decay_t<decltype(operand)>;
+            if constexpr (std::is_same_v<T, std::unique_ptr<ExprNode>>) {
+              return *operand->type;
+
+            } else if constexpr (std::is_same_v<T, std::unique_ptr<Type>>) {
+              return *operand;
+            }
+          },
+          unary_expr.operand);
+      WriteInstr_("{} =w copy {}", FuncScopeTemp{res_num}, operand_type.size());
       num_recorder.Record(res_num);
     } break;
     default:

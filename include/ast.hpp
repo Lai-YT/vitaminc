@@ -1,6 +1,7 @@
 #ifndef AST_HPP_
 #define AST_HPP_
 
+#include <cassert>
 #include <memory>
 #include <string>
 #include <utility>
@@ -596,15 +597,20 @@ struct RecordMemExprNode : public ExprNode {
 };
 
 struct UnaryExprNode : public ExprNode {
-  UnaryExprNode(Location loc, UnaryOperator op,
-                std::unique_ptr<ExprNode> operand)
-      : ExprNode{loc}, op{op}, operand{std::move(operand)} {}
+  UnaryExprNode(
+      Location loc, UnaryOperator op,
+      std::variant<std::unique_ptr<ExprNode>, std::unique_ptr<Type>> operand)
+      : ExprNode{loc}, op{op}, operand{std::move(operand)} {
+    if (op != UnaryOperator::kSizeof) {
+      assert(std::holds_alternative<std::unique_ptr<ExprNode>>(this->operand));
+    }
+  }
 
   void Accept(NonModifyingVisitor&) const override;
   void Accept(ModifyingVisitor&) override;
 
   UnaryOperator op;
-  std::unique_ptr<ExprNode> operand;
+  std::variant<std::unique_ptr<ExprNode>, std::unique_ptr<Type>> operand;
 };
 
 struct BinaryExprNode : public ExprNode {

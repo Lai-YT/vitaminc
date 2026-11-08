@@ -3,6 +3,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <variant>
 
 #include "ast.hpp"
@@ -444,7 +445,16 @@ void AstDumper::Visit(const UnaryExprNode& unary_expr) {
             << unary_expr.type->ToString() << " "
             << GetUnaryOperator(unary_expr.op) << '\n';
   indenter_.IncreaseLevel();
-  unary_expr.operand->Accept(*this);
+  std::visit(
+      [this](auto&& operand) {
+        using T = std::decay_t<decltype(operand)>;
+        if constexpr (std::is_same_v<T, std::unique_ptr<ExprNode>>) {
+          operand->Accept(*this);
+        } else if constexpr (std::is_same_v<T, std::unique_ptr<Type>>) {
+          std::cout << indenter_.Indent() << operand->ToString() << '\n';
+        }
+      },
+      unary_expr.operand);
   indenter_.DecreaseLevel();
 }
 

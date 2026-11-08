@@ -580,32 +580,34 @@ void TypeChecker::Visit(RecordMemExprNode& mem_expr) {
 }
 
 void TypeChecker::Visit(UnaryExprNode& unary_expr) {
-  unary_expr.operand->Accept(*this);
+  auto* operand = std::get_if<std::unique_ptr<ExprNode>>(&unary_expr.operand);
+  if (operand) {
+    (*operand)->Accept(*this);
+  }
   switch (unary_expr.op) {
     case UnaryOperator::kAddr: {
-      const auto* id_expr =
-          dynamic_cast<IdExprNode*>((unary_expr.operand).get());
+      const auto* id_expr = dynamic_cast<IdExprNode*>(operand->get());
       // NOTE: The operand of unary '&' must be an lvalue, and the only
       // supported lvalue is an identifier.
       if (!id_expr || !env_.LookUpSymbol(id_expr->id)) {
         // TODO: lvalue required as unary '&' operand
       }
-      unary_expr.type =
-          std::make_unique<PtrType>(unary_expr.operand->type->Clone());
+      unary_expr.type = std::make_unique<PtrType>((*operand)->type->Clone());
     } break;
     case UnaryOperator::kDeref:
-      if (!unary_expr.operand->type->IsPtr()) {
+      if (!(*operand)->type->IsPtr()) {
         // TODO: the operand of unary '*' shall have pointer type
       }
       unary_expr.type =
-          dynamic_cast<PtrType&>(*unary_expr.operand->type).base_type().Clone();
+          dynamic_cast<PtrType&>(*(*operand)->type).base_type().Clone();
       break;
     case UnaryOperator::kSizeof:
-      // FIXME: `sizeof` returns `size_t` (unsigned), but we currently use `int`.
+      // FIXME: `sizeof` returns `size_t` (unsigned), but we currently use
+      // `int`.
       unary_expr.type = std::make_unique<PrimType>(PrimitiveType::kInt);
       break;
     default:
-      unary_expr.type = unary_expr.operand->type->Clone();
+      unary_expr.type = (*operand)->type->Clone();
       break;
   }
   // TODO: check operands type

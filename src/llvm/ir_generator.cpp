@@ -25,6 +25,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -745,7 +746,11 @@ void LLVMIRGenerator::Visit(const RecordMemExprNode& mem_expr) {
 }
 
 void LLVMIRGenerator::Visit(const UnaryExprNode& unary_expr) {
-  unary_expr.operand->Accept(*this);
+  if (auto* operand =
+          std::get_if<std::unique_ptr<ExprNode>>(&unary_expr.operand)) {
+    (*operand)->Accept(*this);
+  }
+
   switch (unary_expr.op) {
     case UnaryOperator::kIncr:
     case UnaryOperator::kDecr: {
@@ -782,7 +787,8 @@ void LLVMIRGenerator::Visit(const UnaryExprNode& unary_expr) {
       val_recorder.Record(res);
     } break;
     case UnaryOperator::kAddr: {
-      if (unary_expr.operand->type->IsFunc()) {
+      if (std::get<std::unique_ptr<ExprNode>>(unary_expr.operand)
+              ->type->IsFunc()) {
         // No-op; the value is still the function itself.
         break;
       }
@@ -791,11 +797,11 @@ void LLVMIRGenerator::Visit(const UnaryExprNode& unary_expr) {
       val_recorder.Record(operand_addr);
     } break;
     case UnaryOperator::kDeref: {
+      const auto& operand_type =
+          std::get<std::unique_ptr<ExprNode>>(unary_expr.operand)->type;
       // Is function pointer.
-      if (unary_expr.operand->type->IsPtr() &&
-          dynamic_cast<PtrType&>(*unary_expr.operand->type)
-              .base_type()
-              .IsFunc()) {
+      if (operand_type->IsPtr() &&
+          dynamic_cast<PtrType&>(*operand_type).base_type().IsFunc()) {
         // No-op; the value is still the function itself.
         break;
       }
@@ -805,6 +811,22 @@ void LLVMIRGenerator::Visit(const UnaryExprNode& unary_expr) {
           builder_helper_.GetLLVMType(*(unary_expr.type)), operand);
       val_recorder.Record(res);
       val_to_id_addr[res] = operand;
+    } break;
+    case UnaryOperator::kSizeof: {
+      const auto& operand_type = std::visit(
+          [](auto&& operand) -> Type& {
+            using T = std::decay_t<decltype(operand)>;
+            if constexpr (std::is_same_v<T, std::unique_ptr<ExprNode>>) {
+              return *operand->type;
+
+            } else if constexpr (std::is_same_v<T, std::unique_ptr<Type>>) {
+              return *operand;
+            }
+          },
+          unary_expr.operand);
+      auto size = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context_),
+                                         operand_type.size());
+      val_recorder.Record(size);
     } break;
     default:
       break;

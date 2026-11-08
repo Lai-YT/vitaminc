@@ -121,6 +121,7 @@ std::unique_ptr<Type> ResolveType(std::unique_ptr<Type> resolved_type,
 // The abstract declarator is a declarator without an identifier, which are actually types.
 %nterm <std::unique_ptr<Type>> abstract_declarator_opt abstract_declarator direct_abstract_declarator_opt direct_abstract_declarator
 %nterm <std::unique_ptr<Type>> struct_or_union specifier_qualifier_list
+%nterm <std::unique_ptr<Type>> type_name
 // Type specifier can be a primitive type (int) or an user defined type (struct, union)
 // The followings also construct types, but they are not yet fully resolved.
 %nterm <std::variant<std::unique_ptr<Type>, std::unique_ptr<DeclNode>>> type_specifier declaration_specifiers struct_or_union_specifier enum_specifier
@@ -304,7 +305,9 @@ unary_expr: postfix_expr { $$ = $1; }
   | STAR unary_expr { $$ = std::make_unique<UnaryExprNode>(Loc(@1), UnaryOperator::kDeref, $2); }
   | TILDE unary_expr { $$ = std::make_unique<UnaryExprNode>(Loc(@1), UnaryOperator::kBitComp, $2); }
   | SIZEOF unary_expr { $$ = std::make_unique<UnaryExprNode>(Loc(@1), UnaryOperator::kSizeof, $2); }
-  /* TODO: sizeof (id) */
+  | SIZEOF LEFT_PAREN type_name RIGHT_PAREN {
+      $$ = std::make_unique<UnaryExprNode>(Loc(@1), UnaryOperator::kSizeof, $3);
+  }
   ;
 
 /* 6.5.4 Cast operators*/
@@ -774,6 +777,8 @@ abstract_declarator_opt: abstract_declarator { $$ = $1; }
   ;
 
 /* 6.7.6 Type names */
+type_name: specifier_qualifier_list abstract_declarator_opt { $$ = ResolveType($1, $2); };
+
 /* NOTE: abstract means the declarator does not have an identifier */
 abstract_declarator: pointer {
     std::unique_ptr<Type> type = std::make_unique<PrimType>(PrimitiveType::kUnknown);
