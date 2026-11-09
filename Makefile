@@ -84,6 +84,7 @@ coverage-report: coverage
 	@echo "[INFO] Generating coverage info..."
 	@lcov --gcov-tool $(GCOV) --capture --directory $(CURDIR) \
 		--exclude "/usr/include/*" --exclude "/usr/local/include/*" \
+		--exclude "/usr/lib/llvm-*/include/*" \
 		--exclude "**/lex.yy.*" --exclude "**/y.tab.*" \
 		--output-file $(COVERAGE_DIR)/coverage.info
 	@echo "[INFO] Generating HTML report..."
