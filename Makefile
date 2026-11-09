@@ -1,5 +1,6 @@
 TARGET := vitaminc
 CXX := g++
+GCOV ?= gcov-$(shell $(CXX) -dumpversion | cut -d. -f1)
 CLANG_TIDY ?= clang-tidy
 CXXFLAGS = -g3 -std=c++17 -Wall -MMD -Iinclude -I$(shell llvm-config-18 --includedir) -Werror
 LDLIBS = -lfmt $(shell llvm-config-18 --libs core)
@@ -63,12 +64,12 @@ coverage: CXXFLAGS += -O0 $(GCOVFLAGS)
 # You might want to run coverage-report instead of coverage if you have lcov installed.
 coverage: clean $(TARGET) # Make a clean build to use the coverage flags.
 	@echo "[INFO] Checking if gcov is installed..."
-	@command -v gcov >/dev/null 2>&1 \
+	@command -v $(GCOV) >/dev/null 2>&1 \
 		|| { echo >&2 "gcov is not installed, consider installing it first"; exit 1; }
 	@echo "[INFO] Running tests..."
 	@$(MAKE) test
 	@echo "[INFO] Generating coverage data..."
-	@gcov $(OBJS:.o=.cpp)
+	@$(GCOV) $(OBJS:.o=.cpp)
 	@echo "[INFO] Coverage data generated."
 	@echo "[INFO] Removing the executable since it's not meant to be used..."
 	@$(RM) $(TARGET)
@@ -81,7 +82,7 @@ coverage-report: coverage
 	@echo "[INFO] Creating coverage directory..."
 	@mkdir -p $(COVERAGE_DIR)
 	@echo "[INFO] Generating coverage info..."
-	@lcov --capture --directory $(CURDIR) \
+	@lcov --gcov-tool $(GCOV) --capture --directory $(CURDIR) \
 		--exclude "/usr/include/*" --exclude "/usr/local/include/*" \
 		--exclude "**/lex.yy.*" --exclude "**/y.tab.*" \
 		--output-file $(COVERAGE_DIR)/coverage.info
