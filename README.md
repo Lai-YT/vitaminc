@@ -1,6 +1,6 @@
 # VitaminC
 
-[![CI](https://github.com/fruits-lab/vitaminc/actions/workflows/ci.yml/badge.svg)](https://github.com/fruits-lab/vitaminc/actions/workflows/ci.yml)
+[![CI](https://github.com/Lai-YT/vitaminc/actions/workflows/ci.yml/badge.svg)](https://github.com/Lai-YT/vitaminc/actions/workflows/ci.yml)
 
 VitaminC 🍋 is an educational C compiler frontend written in C++. As a frontend, it generates [intermediate representations](https://en.wikipedia.org/wiki/Intermediate_representation) (IR). The compilation phases—lexer, parser, type checker, and IR generator—are carefully designed as individual classes.
 
