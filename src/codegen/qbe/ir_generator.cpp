@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <iosfwd>
 #include <map>
 #include <memory>
 #include <optional>
@@ -26,19 +27,6 @@ using namespace qbe::compiler_generated;
 namespace user_defined = qbe::user_defined;
 
 namespace {
-
-/// @brief Returns the next local number and increment it by 1. The first number
-/// will be 1.
-int NextLocalNum() {
-  /// @brief temporary index under a scope
-  static int next_local_num = 1;
-  return next_local_num++;
-}
-
-int NextLabelNum() {
-  static int next_label_num = 1;
-  return next_label_num++;
-}
 
 std::string GetBinaryOperator(BinaryOperator op) {
   switch (op) {
@@ -83,24 +71,6 @@ std::string GetBinaryOperator(BinaryOperator op) {
   }
 }
 
-auto id_to_num  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables):
-                // Accessible only within this translation unit; declaring as a
-                // data member introduces unnecessary dependency.
-    = std::map<std::string, int>{};
-
-auto
-    reg_num_to_id_num  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables):
-                       // Accessible only within this translation unit;
-                       // declaring as a data member introduces unnecessary
-                       // dependency.
-    = std::map<int, int>{};
-
-auto
-    reg_num_to_id  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables):
-                   // Accessible only within this translation unit; declaring as
-                   // a data member introduces unnecessary dependency.
-    = std::map<int, std::string>{};
-
 /// @brief Every expression generates a temporary. The local number of such
 /// temporary should be stored, so can propagate to later uses.
 class PrevExprNumRecorder {
@@ -123,35 +93,16 @@ class PrevExprNumRecorder {
   int num_of_prev_expr_ = kNoRecord;
 };
 
-auto
-    num_recorder  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables):
-                  // Accessible only within this translation unit; declaring as
-                  // a data member introduces unnecessary dependency.
-    = PrevExprNumRecorder{};
-
 struct LabelViewPair {
   BlockLabel entry;
   BlockLabel exit;
 };
-
-/// @note Blocks that allows jumping within or out of it should add its labels
-/// to this list.
-auto
-    label_views_of_jumpable_blocks  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-    = std::vector<LabelViewPair>{};
 
 struct GlobalVarInitVal {
   // TODO: support other types, such as float, long, short
   std::variant<int> value;
   std::shared_ptr<Type> type;
 };
-
-/// @brief Stores values from bottom level nodes and pass them to upper leve
-/// nodes because global variables are required to initialize exact values at
-/// declaration.
-auto
-    global_var_init_vals  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-    = std::vector<GlobalVarInitVal>{};
 
 /// @brief Generate corresponding QBE string based on `type` and `value`.
 /// @return formatted QBE string with type and value, e.g. w 4 (word of value 4)
@@ -166,13 +117,70 @@ std::string GenerateQBEInit(const GlobalVarInitVal& init) {
       init.value);
 }
 
-/// @note Designator values that allows struct and union to designate the
-/// correct member or index for initialization
-auto
-    record_des_vals  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-    = std::vector<std::variant<std::string, int>>{};
+struct CaseInfo {
+  /// @note This is a non-owning pointer that points to the expression of the
+  /// case.
+  const ExprNode* expr = nullptr;
+  BlockLabel label;
+};
+
+struct SwitchInfo {
+  std::vector<CaseInfo> case_infos{};
+  std::optional<BlockLabel> default_label;
+  BlockLabel exit_label;
+
+  explicit SwitchInfo(BlockLabel exit_label,
+                      std::optional<BlockLabel> default_label = std::nullopt)
+      : default_label{std::move(default_label)},
+        exit_label{std::move(exit_label)} {}
+};
 
 }  // namespace
+
+class QbeContext {
+ public:
+  /// @brief Returns the next local number and increment it by 1. The first
+  /// number will be 1.
+  int NextLocalNum() {
+    return next_local_num_++;
+  }
+
+  int NextLabelNum() {
+    return next_label_num_++;
+  }
+
+  std::map<std::string, int> id_to_num{};
+  std::map<int, int> reg_num_to_id_num{};
+  std::map<int, std::string> reg_num_to_id{};
+
+  PrevExprNumRecorder num_recorder{};
+
+  /// @note Blocks that allows jumping within or out of it should add its labels
+  /// to this list.
+  std::vector<LabelViewPair> label_views_of_jumpable_blocks{};
+
+  /// @brief Stores values from bottom level nodes and pass them to upper level
+  /// nodes because global variables are required to initialize exact values at
+  /// declaration.
+  std::vector<GlobalVarInitVal> global_var_init_vals{};
+  /// @note Designator values that allows struct and union to designate the
+  /// correct member or index for initialization
+  std::vector<std::variant<std::string, int>> record_des_vals{};
+
+  /// @brief The shared states passed around during the generation of a switch.
+  /// @note To allow nested switch statements, the information is stacked.
+  std::vector<std::shared_ptr<SwitchInfo>> switch_infos{};
+
+ private:
+  /// @brief temporary index under a scope
+  int next_local_num_ = 1;
+  int next_label_num_ = 1;
+};
+
+QbeIrGenerator::QbeIrGenerator(std::ostream& output)
+    : output_{output}, ctx_{std::make_unique<QbeContext>()} {}
+
+QbeIrGenerator::~QbeIrGenerator() = default;
 
 void QbeIrGenerator::Visit(const DeclStmtNode& decl_stmt) {
   for (const auto& decl : decl_stmt.decls) {
@@ -184,30 +192,30 @@ void QbeIrGenerator::Visit(const VarDeclNode& decl) {
   if (decl.is_global) {
     // TODO: support different data types.
     if (decl.init) {
-      global_var_init_vals.clear();
+      ctx_->global_var_init_vals.clear();
       decl.init->Accept(*this);
       Write_("export data {} = align {} {{ {} }}\n",
              user_defined::GlobalPointer{decl.id}, decl.type->size(),
-             GenerateQBEInit(global_var_init_vals.at(0)));
+             GenerateQBEInit(ctx_->global_var_init_vals.at(0)));
     } else {
       // `z` in QBE stands for allocating n bytes of memory space.
       Write_("export data {0} = align {1} {{ z {1} }}\n",
              user_defined::GlobalPointer{decl.id}, decl.type->size());
     }
   } else {
-    int id_num = NextLocalNum();
+    int id_num = ctx_->NextLocalNum();
     WriteInstr_("{} =l alloc{} {}", FuncScopeTemp{id_num}, decl.type->size(),
                 decl.type->size());
     if (decl.init) {
       decl.init->Accept(*this);
-      int init_num = num_recorder.NumOfPrevExpr();
+      int init_num = ctx_->num_recorder.NumOfPrevExpr();
       // A pointer declaration may have two options for its right hand side:
       if (decl.init->type->IsPtr() || decl.init->type->IsFunc()) {
         // 1. int* a = &b; rhs is a reference of integer. We need to store b's
         // address to a, where we need to map b's reg_num back to its id_num.
         if (dynamic_cast<UnaryExprNode*>((decl.init).get())) {
           WriteInstr_("storel {}, {}",
-                      FuncScopeTemp{reg_num_to_id_num.at(init_num)},
+                      FuncScopeTemp{ctx_->reg_num_to_id_num.at(init_num)},
                       FuncScopeTemp{id_num});
         } else {
           // 2. int* a = c; c itself stores the address of another integer. We
@@ -221,7 +229,7 @@ void QbeIrGenerator::Visit(const VarDeclNode& decl) {
       }
     }
     // Set up the number of the id so we know were to load it back.
-    id_to_num[decl.id] = id_num;
+    ctx_->id_to_num[decl.id] = id_num;
   }
 }
 
@@ -232,14 +240,14 @@ void QbeIrGenerator::Visit(const ArrDeclNode& arr_decl) {
            user_defined::GlobalPointer{arr_decl.id},
            arr_type.element_type().size());
 
-    global_var_init_vals.clear();
+    ctx_->global_var_init_vals.clear();
     auto arr_size = arr_type.len();
     auto init_len = arr_decl.init_list.size();
     assert(init_len <= arr_size);
     for (auto i = std::size_t{0}; i < init_len; ++i) {
       auto& arr_init = arr_decl.init_list.at(i);
       arr_init->Accept(*this);
-      Write_("{}", GenerateQBEInit(global_var_init_vals.at(i)));
+      Write_("{}", GenerateQBEInit(ctx_->global_var_init_vals.at(i)));
       if (i != arr_size - 1) {
         Write_(", ");
       }
@@ -251,13 +259,13 @@ void QbeIrGenerator::Visit(const ArrDeclNode& arr_decl) {
     }
     Write_(" }}\n");
   } else {
-    int base_addr_num = NextLocalNum();
+    int base_addr_num = ctx_->NextLocalNum();
     assert(arr_decl.type->IsArr());
     const auto& arr_type = dynamic_cast<ArrType&>(*arr_decl.type);
     auto element_size = arr_type.element_type().size();
     WriteInstr_("{} =l alloc{} {}", FuncScopeTemp{base_addr_num}, element_size,
                 arr_decl.type->size());
-    id_to_num[arr_decl.id] = base_addr_num;
+    ctx_->id_to_num[arr_decl.id] = base_addr_num;
 
     // NOTE: Compiler will not set elements to 0 if `init_len` is 0.
     // 6.7.9 Initialization
@@ -271,16 +279,16 @@ void QbeIrGenerator::Visit(const ArrDeclNode& arr_decl) {
         arr_init->Accept(*this);
       }
 
-      const int offset = NextLocalNum();
+      const int offset = ctx_->NextLocalNum();
       WriteInstr_("{} =l extsw {}", FuncScopeTemp{offset}, i * element_size);
 
       // res_addr = base_addr + offset
-      const int res_addr_num = NextLocalNum();
+      const int res_addr_num = ctx_->NextLocalNum();
       WriteInstr_("{} =l add {}, {}", FuncScopeTemp{res_addr_num},
                   FuncScopeTemp{base_addr_num}, FuncScopeTemp{offset});
 
       if (i < init_len) {
-        int init_val_num = num_recorder.NumOfPrevExpr();
+        int init_val_num = ctx_->num_recorder.NumOfPrevExpr();
         WriteInstr_("storew {}, {}", FuncScopeTemp{init_val_num},
                     FuncScopeTemp{res_addr_num});
       } else {
@@ -300,11 +308,11 @@ void QbeIrGenerator::Visit(const FieldNode& field) {
 }
 
 void QbeIrGenerator::Visit(const RecordVarDeclNode& record_var_decl) {
-  const auto base_addr = NextLocalNum();
+  const auto base_addr = ctx_->NextLocalNum();
   // TODO: support different data types. We have `int` type for now.
   WriteInstr_("{} =l alloc4 {}", FuncScopeTemp{base_addr},
               record_var_decl.type->size());
-  id_to_num[record_var_decl.id] = base_addr;
+  ctx_->id_to_num[record_var_decl.id] = base_addr;
 
   auto& record_type = dynamic_cast<RecordType&>(*record_var_decl.type);
   // NOTE: This predicate will make sure that we don't initialize members that
@@ -318,22 +326,22 @@ void QbeIrGenerator::Visit(const RecordVarDeclNode& record_var_decl) {
     // For example, following union is initialized with the value 6.
     // union shape s = {.circle = 5, .triangle = 6};
     const auto& init = record_var_decl.inits.at(i);
-    record_des_vals.clear();
+    ctx_->record_des_vals.clear();
     init->Accept(*this);
-    const auto init_num = num_recorder.NumOfPrevExpr();
+    const auto init_num = ctx_->num_recorder.NumOfPrevExpr();
 
     std::size_t offset = record_type.OffsetOf(i);
-    if (!record_des_vals.empty()) {
+    if (!ctx_->record_des_vals.empty()) {
       // TODO: consider array index designators.
       // NOTE: Only consider identifer designators for now.
-      assert(record_des_vals.size() == 1);
-      auto mem_index =
-          record_type.MemberIndex(std::get<std::string>(record_des_vals.at(0)));
+      assert(ctx_->record_des_vals.size() == 1);
+      auto mem_index = record_type.MemberIndex(
+          std::get<std::string>(ctx_->record_des_vals.at(0)));
       offset = record_type.OffsetOf(mem_index);
     }
 
     // res_addr = base_addr + offset
-    const int res_addr_num = NextLocalNum();
+    const int res_addr_num = ctx_->NextLocalNum();
     WriteInstr_("{} =l add {}, {}", FuncScopeTemp{res_addr_num},
                 FuncScopeTemp{base_addr}, offset);
     WriteInstr_("storew {}, {}", FuncScopeTemp{init_num},
@@ -342,21 +350,21 @@ void QbeIrGenerator::Visit(const RecordVarDeclNode& record_var_decl) {
 }
 
 void QbeIrGenerator::Visit(const ParamNode& parameter) {
-  int id_num = NextLocalNum();
+  int id_num = ctx_->NextLocalNum();
   // TODO: support different data types
   if (parameter.type->IsPtr()) {
     Write_("l %.{}", id_num);
   } else {
     Write_("w %.{}", id_num);
   }
-  id_to_num[parameter.id] = id_num;
+  ctx_->id_to_num[parameter.id] = id_num;
 }
 
 void QbeIrGenerator::AllocMemForParams_(
     const std::vector<std::unique_ptr<ParamNode>>& parameters) {
   for (const auto& parameter : parameters) {
-    int id_num = id_to_num.at(parameter->id);
-    int reg_num = NextLocalNum();
+    int id_num = ctx_->id_to_num.at(parameter->id);
+    int reg_num = ctx_->NextLocalNum();
     WriteInstr_("{} =l alloc{} {}", FuncScopeTemp{reg_num},
                 parameter->type->size(), parameter->type->size());
     if (parameter->type->IsPtr()) {
@@ -367,12 +375,12 @@ void QbeIrGenerator::AllocMemForParams_(
                   FuncScopeTemp{reg_num});
     }
     // Update to store the new number.
-    id_to_num[parameter->id] = reg_num;
+    ctx_->id_to_num[parameter->id] = reg_num;
   }
 }
 
 void QbeIrGenerator::Visit(const FuncDefNode& func_def) {
-  int label_num = NextLabelNum();
+  int label_num = ctx_->NextLabelNum();
   // Parameter allocations go after the start label and before the body.
   auto start_label = BlockLabel{"start", label_num};
   auto body_label = BlockLabel{"body", label_num};
@@ -425,8 +433,8 @@ void QbeIrGenerator::Visit(const TransUnitNode& trans_unit) {
 
 void QbeIrGenerator::Visit(const IfStmtNode& if_stmt) {
   if_stmt.predicate->Accept(*this);
-  int predicate_num = num_recorder.NumOfPrevExpr();
-  int label_num = NextLabelNum();
+  int predicate_num = ctx_->num_recorder.NumOfPrevExpr();
+  int label_num = ctx_->NextLabelNum();
   auto then_label = BlockLabel{"if_then", label_num};
   auto else_label = BlockLabel{"if_else", label_num};
   auto end_label = BlockLabel{"if_end", label_num};
@@ -456,7 +464,7 @@ void QbeIrGenerator::Visit(const IfStmtNode& if_stmt) {
 }
 
 void QbeIrGenerator::Visit(const WhileStmtNode& while_stmt) {
-  int label_num = NextLabelNum();
+  int label_num = ctx_->NextLabelNum();
   const auto label_prefix =
       std::string{while_stmt.is_do_while ? "do_" : "while_"};
   auto body_label = BlockLabel{label_prefix + "body", label_num};
@@ -471,21 +479,21 @@ void QbeIrGenerator::Visit(const WhileStmtNode& while_stmt) {
   if (!while_stmt.is_do_while) {
     WriteLabel_(pred_label);
     while_stmt.predicate->Accept(*this);
-    int predicate_num = num_recorder.NumOfPrevExpr();
+    int predicate_num = ctx_->num_recorder.NumOfPrevExpr();
     WriteInstr_("jnz {}, {}, {}", FuncScopeTemp{predicate_num}, body_label,
                 end_label);
   }
   WriteLabel_(body_label);
-  label_views_of_jumpable_blocks.push_back(
+  ctx_->label_views_of_jumpable_blocks.push_back(
       {.entry = pred_label, .exit = end_label});
   while_stmt.loop_body->Accept(*this);
-  label_views_of_jumpable_blocks.pop_back();
+  ctx_->label_views_of_jumpable_blocks.pop_back();
   if (!while_stmt.is_do_while) {
     WriteInstr_("jmp {}", pred_label);
   } else {
     WriteLabel_(pred_label);
     while_stmt.predicate->Accept(*this);
-    int predicate_num = num_recorder.NumOfPrevExpr();
+    int predicate_num = ctx_->num_recorder.NumOfPrevExpr();
     WriteInstr_("jnz {}, {}, {}", FuncScopeTemp{predicate_num}, body_label,
                 end_label);
   }
@@ -493,7 +501,7 @@ void QbeIrGenerator::Visit(const WhileStmtNode& while_stmt) {
 }
 
 void QbeIrGenerator::Visit(const ForStmtNode& for_stmt) {
-  int label_num = NextLabelNum();
+  int label_num = ctx_->NextLabelNum();
 
   // A for loop consists of three clauses: loop initialization, predicate, and a
   // step: for (init; pred; step) { body; }
@@ -512,15 +520,15 @@ void QbeIrGenerator::Visit(const ForStmtNode& for_stmt) {
   WriteLabel_(pred_label);
   for_stmt.predicate->Accept(*this);
   if (!dynamic_cast<NullExprNode*>((for_stmt.predicate).get())) {
-    int predicate_num = num_recorder.NumOfPrevExpr();
+    int predicate_num = ctx_->num_recorder.NumOfPrevExpr();
     WriteInstr_("jnz {}, {}, {}", FuncScopeTemp{predicate_num}, body_label,
                 end_label);
   }
   WriteLabel_(body_label);
-  label_views_of_jumpable_blocks.push_back(
+  ctx_->label_views_of_jumpable_blocks.push_back(
       {.entry = step_label, .exit = end_label});
   for_stmt.loop_body->Accept(*this);
-  label_views_of_jumpable_blocks.pop_back();
+  ctx_->label_views_of_jumpable_blocks.pop_back();
   WriteLabel_(step_label);
   for_stmt.step->Accept(*this);
   WriteInstr_("jmp {}", pred_label);
@@ -529,7 +537,7 @@ void QbeIrGenerator::Visit(const ForStmtNode& for_stmt) {
 
 void QbeIrGenerator::Visit(const ReturnStmtNode& ret_stmt) {
   ret_stmt.expr->Accept(*this);
-  int ret_num = num_recorder.NumOfPrevExpr();
+  int ret_num = ctx_->num_recorder.NumOfPrevExpr();
   WriteInstr_("ret {}", FuncScopeTemp{ret_num});
 }
 
@@ -538,52 +546,30 @@ void QbeIrGenerator::Visit(const GotoStmtNode& goto_stmt) {
 }
 
 void QbeIrGenerator::Visit(const BreakStmtNode& break_stmt) {
-  assert(!label_views_of_jumpable_blocks.empty());
-  WriteInstr_("jmp {}", BlockLabel{label_views_of_jumpable_blocks.back().exit});
+  assert(!ctx_->label_views_of_jumpable_blocks.empty());
+  WriteInstr_("jmp {}",
+              BlockLabel{ctx_->label_views_of_jumpable_blocks.back().exit});
 }
 
 void QbeIrGenerator::Visit(const ContinueStmtNode& continue_stmt) {
-  assert(!label_views_of_jumpable_blocks.empty());
+  assert(!ctx_->label_views_of_jumpable_blocks.empty());
   WriteInstr_("jmp {}",
-              BlockLabel{label_views_of_jumpable_blocks.back().entry});
+              BlockLabel{ctx_->label_views_of_jumpable_blocks.back().entry});
 }
 
 namespace {
 
-struct CaseInfo {
-  /// @note This is a non-owning pointer that points to the expression of the
-  /// case.
-  const ExprNode* expr = nullptr;
-  BlockLabel label;
-};
-
-struct SwitchInfo {
-  std::vector<CaseInfo> case_infos{};
-  std::optional<BlockLabel> default_label;
-  BlockLabel exit_label;
-
-  explicit SwitchInfo(BlockLabel exit_label,
-                      std::optional<BlockLabel> default_label = std::nullopt)
-      : default_label{std::move(default_label)},
-        exit_label{std::move(exit_label)} {}
-};
-
-/// @brief The shared states passed around during the generation of a switch.
-/// @note To allow nested switch statements, the information is stacked.
-auto switch_infos  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-    = std::vector<std::shared_ptr<SwitchInfo>>{};
-
 /// @brief The label of the next condition depends on whether we've already
 /// handled the last one and whether there is a default label.
-BlockLabel GetNextCondLabel(bool is_last_cond,
+BlockLabel GetNextCondLabel(QbeContext& ctx, bool is_last_cond,
                             const std::optional<BlockLabel>& default_label) {
   if (is_last_cond && default_label) {
     return *default_label;
   }
   if (is_last_cond) {
-    return switch_infos.back()->exit_label;
+    return ctx.switch_infos.back()->exit_label;
   }
-  return {"switch_cond", NextLabelNum()};
+  return {"switch_cond", ctx.NextLabelNum()};
 }
 
 }  // namespace
@@ -641,22 +627,22 @@ void QbeIrGenerator::Visit(const SwitchStmtNode& switch_stmt) {
 
   WriteComment_("switch");
   switch_stmt.ctrl->Accept(*this);
-  const auto ctrl_num = num_recorder.NumOfPrevExpr();
-  auto cond_label = BlockLabel{"switch_cond", NextLabelNum()};
+  const auto ctrl_num = ctx_->num_recorder.NumOfPrevExpr();
+  auto cond_label = BlockLabel{"switch_cond", ctx_->NextLabelNum()};
   WriteInstr_("jmp {}", cond_label);
 
-  switch_infos.push_back(
-      std::make_shared<SwitchInfo>(BlockLabel{"switch_exit", NextLabelNum()}));
+  ctx_->switch_infos.push_back(std::make_shared<SwitchInfo>(
+      BlockLabel{"switch_exit", ctx_->NextLabelNum()}));
   GenerateCases_(switch_stmt);
   GenerateConditions_(switch_stmt, cond_label, ctrl_num);
 
-  WriteLabel_(switch_infos.back()->exit_label);
-  switch_infos.pop_back();
+  WriteLabel_(ctx_->switch_infos.back()->exit_label);
+  ctx_->switch_infos.pop_back();
 }
 
 void QbeIrGenerator::GenerateCases_(const SwitchStmtNode& switch_stmt) {
-  auto this_switch_info = switch_infos.back();
-  label_views_of_jumpable_blocks.push_back(
+  auto this_switch_info = ctx_->switch_infos.back();
+  ctx_->label_views_of_jumpable_blocks.push_back(
       {// FIXME: The break statement only jumps to the exit label; there's no
        // appropriate entry label to set here.
        .entry = this_switch_info->exit_label,
@@ -664,28 +650,28 @@ void QbeIrGenerator::GenerateCases_(const SwitchStmtNode& switch_stmt) {
 
   );
   switch_stmt.stmt->Accept(*this);
-  label_views_of_jumpable_blocks.pop_back();
-  WriteLabel_(BlockLabel{"switch_bottom", NextLabelNum()});
+  ctx_->label_views_of_jumpable_blocks.pop_back();
+  WriteLabel_(BlockLabel{"switch_bottom", ctx_->NextLabelNum()});
   WriteInstr_("jmp {}", this_switch_info->exit_label);
 }
 
 void QbeIrGenerator::GenerateConditions_(const SwitchStmtNode& switch_stmt,
                                          const BlockLabel& first_cond_label,
                                          int ctrl_num) {
-  auto this_switch_info = switch_infos.back();
+  auto this_switch_info = ctx_->switch_infos.back();
   auto cond_label = first_cond_label;
   for (auto i = std::size_t{0}, e = this_switch_info->case_infos.size(); i < e;
        ++i) {
     WriteLabel_(cond_label);
     const auto& case_info = this_switch_info->case_infos.at(i);
     case_info.expr->Accept(*this);
-    const auto expr_num = num_recorder.NumOfPrevExpr();
-    const auto match_num = NextLocalNum();
+    const auto expr_num = ctx_->num_recorder.NumOfPrevExpr();
+    const auto match_num = ctx_->NextLocalNum();
     WriteInstr_("{} =w ceqw {}, {}", FuncScopeTemp{match_num},
                 FuncScopeTemp{ctrl_num}, FuncScopeTemp{expr_num});
     const auto is_last_cond = i == e - 1;
     cond_label =
-        GetNextCondLabel(is_last_cond, this_switch_info->default_label);
+        GetNextCondLabel(*ctx_, is_last_cond, this_switch_info->default_label);
     WriteInstr_("jnz {}, {}, {}", FuncScopeTemp{match_num}, case_info.label,
                 cond_label);
   }
@@ -697,21 +683,21 @@ void QbeIrGenerator::Visit(const IdLabeledStmtNode& id_labeled_stmt) {
 }
 
 void QbeIrGenerator::Visit(const CaseStmtNode& case_stmt) {
-  assert(!switch_infos.empty());
+  assert(!ctx_->switch_infos.empty());
   // The evaluation of the case expression is done in the condition part.
-  auto case_label = BlockLabel{"switch_case", NextLabelNum()};
-  switch_infos.back()->case_infos.push_back(
+  auto case_label = BlockLabel{"switch_case", ctx_->NextLabelNum()};
+  ctx_->switch_infos.back()->case_infos.push_back(
       CaseInfo{case_stmt.expr.get(), case_label});
-  auto& this_case_info = switch_infos.back()->case_infos.back();
+  auto& this_case_info = ctx_->switch_infos.back()->case_infos.back();
   WriteLabel_(this_case_info.label);
   case_stmt.stmt->Accept(*this);
 }
 
 void QbeIrGenerator::Visit(const DefaultStmtNode& default_stmt) {
-  assert(!switch_infos.empty());
-  auto default_label = BlockLabel{"switch_default", NextLabelNum()};
+  assert(!ctx_->switch_infos.empty());
+  auto default_label = BlockLabel{"switch_default", ctx_->NextLabelNum()};
   WriteLabel_(default_label);
-  switch_infos.back()->default_label = default_label;
+  ctx_->switch_infos.back()->default_label = default_label;
   default_stmt.stmt->Accept(*this);
 }
 
@@ -729,11 +715,11 @@ void QbeIrGenerator::Visit(const InitExprNode& init_expr) {
 void QbeIrGenerator::Visit(const ArrDesNode& arr_des) {
   arr_des.index->Accept(*this);
   auto& index_expr = dynamic_cast<IntConstExprNode&>(*arr_des.index);
-  record_des_vals.emplace_back(index_expr.val);
+  ctx_->record_des_vals.emplace_back(index_expr.val);
 }
 
 void QbeIrGenerator::Visit(const IdDesNode& id_des) {
-  record_des_vals.emplace_back(id_des.id);
+  ctx_->record_des_vals.emplace_back(id_des.id);
 }
 
 void QbeIrGenerator::Visit(const NullExprNode& null_expr) {
@@ -743,11 +729,11 @@ void QbeIrGenerator::Visit(const NullExprNode& null_expr) {
 void QbeIrGenerator::Visit(const IdExprNode& id_expr) {
   // If the id is a function, the result is the address of the function.
   if (id_expr.type->IsFunc()) {
-    int res_num = NextLocalNum();
+    int res_num = ctx_->NextLocalNum();
     // The function name is already a function pointer.
     WriteInstr_("{} =l copy {}", FuncScopeTemp{res_num},
                 user_defined::GlobalPointer{id_expr.id});
-    num_recorder.Record(res_num);
+    ctx_->num_recorder.Record(res_num);
     return;
   }
   // The id expression acts as a constant expression.
@@ -756,17 +742,17 @@ void QbeIrGenerator::Visit(const IdExprNode& id_expr) {
     return;
   }
   if (id_expr.is_global) {
-    int reg_num = NextLocalNum();
+    int reg_num = ctx_->NextLocalNum();
     WriteInstr_("{} =w loadw {}", FuncScopeTemp{reg_num},
                 user_defined::GlobalPointer{id_expr.id});
-    num_recorder.Record(reg_num);
-    reg_num_to_id[reg_num] = id_expr.id;
+    ctx_->num_recorder.Record(reg_num);
+    ctx_->reg_num_to_id[reg_num] = id_expr.id;
   } else {
-    assert(id_to_num.count(id_expr.id) != 0);
+    assert(ctx_->id_to_num.count(id_expr.id) != 0);
     /// @brief Plays the role of a "pointer". Its value has to be loaded to
     /// the register before use.
-    int id_num = id_to_num.at(id_expr.id);
-    int reg_num = NextLocalNum();
+    int id_num = ctx_->id_to_num.at(id_expr.id);
+    int reg_num = ctx_->NextLocalNum();
     if (id_expr.type->IsPtr() || id_expr.type->IsFunc()) {
       WriteInstr_("{} =l loadl {}", FuncScopeTemp{reg_num},
                   FuncScopeTemp{id_num});
@@ -774,21 +760,21 @@ void QbeIrGenerator::Visit(const IdExprNode& id_expr) {
       WriteInstr_("{} =w loadw {}", FuncScopeTemp{reg_num},
                   FuncScopeTemp{id_num});
     }
-    num_recorder.Record(reg_num);
+    ctx_->num_recorder.Record(reg_num);
     // Map the temporary reg_num to id_num, so that upper level nodes can store
     // value to id_num instead of reg_num.
-    reg_num_to_id_num[reg_num] = id_num;
+    ctx_->reg_num_to_id_num[reg_num] = id_num;
   }
 }
 
 void QbeIrGenerator::Visit(const IntConstExprNode& int_expr) {
   if (int_expr.is_global) {
-    global_var_init_vals.push_back(
+    ctx_->global_var_init_vals.push_back(
         {int_expr.val, std::make_shared<PrimType>(PrimitiveType::kInt)});
   } else {
-    int num = NextLocalNum();
+    int num = ctx_->NextLocalNum();
     WriteInstr_("{} =w copy {}", FuncScopeTemp{num}, int_expr.val);
-    num_recorder.Record(num);
+    ctx_->num_recorder.Record(num);
   }
 }
 
@@ -798,90 +784,90 @@ void QbeIrGenerator::Visit(const ArgExprNode& arg_expr) {
 
 void QbeIrGenerator::Visit(const ArrSubExprNode& arr_sub_expr) {
   arr_sub_expr.arr->Accept(*this);
-  const int reg_num = num_recorder.NumOfPrevExpr();
+  const int reg_num = ctx_->num_recorder.NumOfPrevExpr();
   arr_sub_expr.index->Accept(*this);
-  const int index_num = num_recorder.NumOfPrevExpr();
+  const int index_num = ctx_->num_recorder.NumOfPrevExpr();
 
   // extend word to long
-  const int extended_num = NextLocalNum();
+  const int extended_num = ctx_->NextLocalNum();
   WriteInstr_("{} =l extsw {}", FuncScopeTemp{extended_num},
               FuncScopeTemp{index_num});
 
   // offset = index number * element size
   // e.g. int a[3]
   // a[1]'s offset = 1 * 4 (int size)
-  const int offset = NextLocalNum();
+  const int offset = ctx_->NextLocalNum();
   const auto& arr_type = dynamic_cast<ArrType&>(*arr_sub_expr.arr->type);
   WriteInstr_("{} =l mul {}, {}", FuncScopeTemp{offset},
               FuncScopeTemp{extended_num}, arr_type.element_type().size());
 
   // res_addr = base_addr + offset
-  const int res_addr_num = NextLocalNum();
+  const int res_addr_num = ctx_->NextLocalNum();
   if (arr_sub_expr.is_global) {
-    const auto id = reg_num_to_id.at(reg_num);
+    const auto id = ctx_->reg_num_to_id.at(reg_num);
     WriteInstr_("{} =l add {}, {}", FuncScopeTemp{res_addr_num},
                 user_defined::GlobalPointer{id}, FuncScopeTemp{offset});
   } else {
     // address of the first element
-    const int base_addr = reg_num_to_id_num.at(reg_num);
+    const int base_addr = ctx_->reg_num_to_id_num.at(reg_num);
     WriteInstr_("{} =l add {}, {}", FuncScopeTemp{res_addr_num},
                 FuncScopeTemp{base_addr}, FuncScopeTemp{offset});
   }
 
   // load value from res_addr
-  const int res_num = NextLocalNum();
+  const int res_num = ctx_->NextLocalNum();
   WriteInstr_("{} =w loadw {}", FuncScopeTemp{res_num},
               FuncScopeTemp{res_addr_num});
-  reg_num_to_id_num[res_num] = res_addr_num;
-  num_recorder.Record(res_num);
+  ctx_->reg_num_to_id_num[res_num] = res_addr_num;
+  ctx_->num_recorder.Record(res_num);
 }
 
 void QbeIrGenerator::Visit(const CondExprNode& cond_expr) {
   cond_expr.predicate->Accept(*this);
-  const int first_num = num_recorder.NumOfPrevExpr();
+  const int first_num = ctx_->num_recorder.NumOfPrevExpr();
   // The second operand is evaluated only if the first compares unequal to
   // 0; the third operand is evaluated only if the first compares equal to
   // 0; the result is the value of the second or third operand (whichever is
   // evaluated).
-  const int label_num = NextLabelNum();
+  const int label_num = ctx_->NextLabelNum();
   auto second_label = BlockLabel{"cond_second", label_num};
   auto third_label = BlockLabel{"cond_third", label_num};
   auto end_label = BlockLabel{"cond_end", label_num};
-  const int first_res = NextLocalNum();
+  const int first_res = ctx_->NextLocalNum();
   WriteInstr_("{} =w {} {}, 0", FuncScopeTemp{first_res},
               GetBinaryOperator(BinaryOperator::kNeq),
               FuncScopeTemp{first_num});
   WriteInstr_("jnz {}, {}, {}", FuncScopeTemp{first_res}, second_label,
               third_label);
-  const int res_num = NextLocalNum();
+  const int res_num = ctx_->NextLocalNum();
   WriteLabel_(second_label);
   cond_expr.then->Accept(*this);
-  const int second_num = num_recorder.NumOfPrevExpr();
+  const int second_num = ctx_->num_recorder.NumOfPrevExpr();
   WriteInstr_("{} =w copy {}", FuncScopeTemp{res_num},
               FuncScopeTemp{second_num});
   WriteInstr_("jmp {}", end_label);
   WriteLabel_(third_label);
   cond_expr.or_else->Accept(*this);
-  const int third_num = num_recorder.NumOfPrevExpr();
+  const int third_num = ctx_->num_recorder.NumOfPrevExpr();
   WriteInstr_("{} =w copy {}", FuncScopeTemp{res_num},
               FuncScopeTemp{third_num});
   WriteLabel_(end_label);
-  num_recorder.Record(res_num);
+  ctx_->num_recorder.Record(res_num);
 }
 
 void QbeIrGenerator::Visit(const FuncCallExprNode& call_expr) {
   call_expr.func_expr->Accept(*this);
-  const int func_num = num_recorder.NumOfPrevExpr();
+  const int func_num = ctx_->num_recorder.NumOfPrevExpr();
 
   // Evaluate the arguments.
   std::vector<int> arg_nums{};
   for (const auto& arg : call_expr.args) {
     arg->Accept(*this);
-    const int arg_num = num_recorder.NumOfPrevExpr();
+    const int arg_num = ctx_->num_recorder.NumOfPrevExpr();
     arg_nums.push_back(arg_num);
   }
 
-  const int res_num = NextLocalNum();
+  const int res_num = ctx_->NextLocalNum();
   Write_(kIndentStr);
   if (const auto* id_expr =
           dynamic_cast<IdExprNode*>(call_expr.func_expr.get());
@@ -904,7 +890,7 @@ void QbeIrGenerator::Visit(const FuncCallExprNode& call_expr) {
     }
   }
   Write_(")\n");
-  num_recorder.Record(res_num);
+  ctx_->num_recorder.Record(res_num);
 }
 
 void QbeIrGenerator::Visit(const PostfixArithExprNode& postfix_expr) {
@@ -915,10 +901,10 @@ void QbeIrGenerator::Visit(const PostfixArithExprNode& postfix_expr) {
   // that the value of the operand is decremented (that is, the value 1 of the
   // appropriate type is subtracted from it).
   postfix_expr.operand->Accept(*this);
-  const int expr_num = num_recorder.NumOfPrevExpr();
-  num_recorder.Record(expr_num);
+  const int expr_num = ctx_->num_recorder.NumOfPrevExpr();
+  ctx_->num_recorder.Record(expr_num);
 
-  const int res_num = NextLocalNum();
+  const int res_num = ctx_->NextLocalNum();
   const auto arith_op = postfix_expr.op == PostfixOperator::kIncr
                             ? BinaryOperator::kAdd
                             : BinaryOperator::kSub;
@@ -928,24 +914,24 @@ void QbeIrGenerator::Visit(const PostfixArithExprNode& postfix_expr) {
               GetBinaryOperator(arith_op), FuncScopeTemp{expr_num});
   const auto& id_expr = dynamic_cast<IdExprNode&>(*postfix_expr.operand);
   WriteInstr_("storew {}, {}", FuncScopeTemp{res_num},
-              FuncScopeTemp{id_to_num.at(id_expr.id)});
+              FuncScopeTemp{ctx_->id_to_num.at(id_expr.id)});
 }
 
 void QbeIrGenerator::Visit(const RecordMemExprNode& mem_expr) {
   mem_expr.expr->Accept(*this);
-  const auto num = num_recorder.NumOfPrevExpr();
-  const auto id_num = reg_num_to_id_num.at(num);
+  const auto num = ctx_->num_recorder.NumOfPrevExpr();
+  const auto id_num = ctx_->reg_num_to_id_num.at(num);
   auto& record_type = dynamic_cast<RecordType&>(*mem_expr.expr->type);
 
-  const auto res_addr_num = NextLocalNum();
+  const auto res_addr_num = ctx_->NextLocalNum();
   WriteInstr_("{} =l add {}, {}", FuncScopeTemp{res_addr_num},
               FuncScopeTemp{id_num}, record_type.OffsetOf(mem_expr.id));
 
-  const int res_num = NextLocalNum();
+  const int res_num = ctx_->NextLocalNum();
   WriteInstr_("{} =w loadw {}", FuncScopeTemp{res_num},
               FuncScopeTemp{res_addr_num});
-  reg_num_to_id_num[res_num] = res_addr_num;
-  num_recorder.Record(res_num);
+  ctx_->reg_num_to_id_num[res_num] = res_addr_num;
+  ctx_->num_recorder.Record(res_num);
 }
 
 void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
@@ -958,8 +944,8 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
     case UnaryOperator::kIncr:
     case UnaryOperator::kDecr: {
       // Equivalent to i += 1 or i -= 1.
-      const int expr_num = num_recorder.NumOfPrevExpr();
-      const int res_num = NextLocalNum();
+      const int expr_num = ctx_->num_recorder.NumOfPrevExpr();
+      const int res_num = ctx_->NextLocalNum();
       const auto arith_op = unary_expr.op == UnaryOperator::kIncr
                                 ? BinaryOperator::kAdd
                                 : BinaryOperator::kSub;
@@ -968,37 +954,37 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
       const auto& id_expr = dynamic_cast<IdExprNode&>(
           *std::get<std::unique_ptr<ExprNode>>(unary_expr.operand));
       WriteInstr_("storew {}, {}", FuncScopeTemp{res_num},
-                  FuncScopeTemp{id_to_num.at(id_expr.id)});
-      num_recorder.Record(res_num);
+                  FuncScopeTemp{ctx_->id_to_num.at(id_expr.id)});
+      ctx_->num_recorder.Record(res_num);
     } break;
     case UnaryOperator::kPos:
       // Do nothing.
       break;
     case UnaryOperator::kNeg: {
-      const int expr_num = num_recorder.NumOfPrevExpr();
-      const int res_num = NextLocalNum();
+      const int expr_num = ctx_->num_recorder.NumOfPrevExpr();
+      const int res_num = ctx_->NextLocalNum();
       WriteInstr_("{} =w neg {}", FuncScopeTemp{res_num},
                   FuncScopeTemp{expr_num});
-      num_recorder.Record(res_num);
+      ctx_->num_recorder.Record(res_num);
     } break;
     case UnaryOperator::kNot: {
       // Is 0 if the value of its operand compares unequal to 0, 1 if the value
       // of its operand compares equal to 0.
       // The expression !E is equivalent to (0 == E).
-      const int expr_num = num_recorder.NumOfPrevExpr();
-      const int res_num = NextLocalNum();
+      const int expr_num = ctx_->num_recorder.NumOfPrevExpr();
+      const int res_num = ctx_->NextLocalNum();
       WriteInstr_("{} =w {} {}, 0", FuncScopeTemp{res_num},
                   GetBinaryOperator(BinaryOperator::kEq),
                   FuncScopeTemp{expr_num});
-      num_recorder.Record(res_num);
+      ctx_->num_recorder.Record(res_num);
     } break;
     case UnaryOperator::kBitComp: {
-      const int expr_num = num_recorder.NumOfPrevExpr();
-      const int res_num = NextLocalNum();
+      const int expr_num = ctx_->num_recorder.NumOfPrevExpr();
+      const int res_num = ctx_->NextLocalNum();
       // Exclusive or with all ones to flip the bits.
       WriteInstr_("{} =w xor {}, -1", FuncScopeTemp{res_num},
                   FuncScopeTemp{expr_num});
-      num_recorder.Record(res_num);
+      ctx_->num_recorder.Record(res_num);
     } break;
     case UnaryOperator::kAddr: {
       const auto& operand =
@@ -1011,15 +997,15 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
       // do not support arrays now, so it must have been backed by an id.
       assert(dynamic_cast<IdExprNode*>(operand.get()));
       // The address of the id is the id itself.
-      const int reg_num = num_recorder.NumOfPrevExpr();
-      const int id_num = reg_num_to_id_num.at(reg_num);
+      const int reg_num = ctx_->num_recorder.NumOfPrevExpr();
+      const int id_num = ctx_->reg_num_to_id_num.at(reg_num);
       // Since each expression has to generate a temporary, we need to copy the
       // id to a new temporary, and update the mapping.
-      const int res_num = NextLocalNum();
+      const int res_num = ctx_->NextLocalNum();
       WriteInstr_("{} =l copy {}", FuncScopeTemp{res_num},
                   FuncScopeTemp{id_num});
-      reg_num_to_id_num[res_num] = id_num;
-      num_recorder.Record(res_num);
+      ctx_->reg_num_to_id_num[res_num] = id_num;
+      ctx_->num_recorder.Record(res_num);
     } break;
     case UnaryOperator::kDeref: {
       const auto& operand_type =
@@ -1033,8 +1019,8 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
 
       // Lhs can use res_num to map to the address, which reg_num currently
       // holds.
-      const int reg_num = num_recorder.NumOfPrevExpr();
-      const int res_num = NextLocalNum();
+      const int reg_num = ctx_->num_recorder.NumOfPrevExpr();
+      const int res_num = ctx_->NextLocalNum();
       // The result might yet be another pointer if the operand is a pointer to
       // a pointer.
       if (unary_expr.type->IsPtr()) {
@@ -1044,11 +1030,11 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
         WriteInstr_("{} =w loadw {}", FuncScopeTemp{res_num},
                     FuncScopeTemp{reg_num});
       }
-      num_recorder.Record(res_num);
-      reg_num_to_id_num[res_num] = reg_num;
+      ctx_->num_recorder.Record(res_num);
+      ctx_->reg_num_to_id_num[res_num] = reg_num;
     } break;
     case UnaryOperator::kSizeof: {
-      int res_num = NextLocalNum();
+      int res_num = ctx_->NextLocalNum();
       const auto& operand_type = std::visit(
           [](auto&& operand) -> Type& {
             using T = std::decay_t<decltype(operand)>;
@@ -1061,7 +1047,7 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
           },
           unary_expr.operand);
       WriteInstr_("{} =w copy {}", FuncScopeTemp{res_num}, operand_type.size());
-      num_recorder.Record(res_num);
+      ctx_->num_recorder.Record(res_num);
     } break;
     default:
       break;
@@ -1076,12 +1062,12 @@ void QbeIrGenerator::Visit(const BinaryExprNode& bin_expr) {
     // be eliminated if it has no side effects or if its definition is
     // immediately dead. However, we leave these optimizations to QBE.
     bin_expr.rhs->Accept(*this);
-    const int right_num = num_recorder.NumOfPrevExpr();
-    num_recorder.Record(right_num);
+    const int right_num = ctx_->num_recorder.NumOfPrevExpr();
+    ctx_->num_recorder.Record(right_num);
     return;
   }
 
-  const int left_num = num_recorder.NumOfPrevExpr();
+  const int left_num = ctx_->num_recorder.NumOfPrevExpr();
   // Due to the lack of direct support for logical operators in QBE, we
   // implement logical expressions using comparison and jump instructions.
   if (bin_expr.op == BinaryOperator::kLand ||
@@ -1089,12 +1075,12 @@ void QbeIrGenerator::Visit(const BinaryExprNode& bin_expr) {
     // The && operator shall yield 1 if both of its operands compare unequal to
     // 0; otherwise, it yields 0; The || operator shall yield 1 if either of its
     // operands compare unequal to 0; otherwise, it yields 0.
-    const int label_num = NextLabelNum();
+    const int label_num = ctx_->NextLabelNum();
     auto rhs_label = BlockLabel{"logic_rhs", label_num};
     // Early exit after evaluating the first operand.
     auto short_circuit_label = BlockLabel{"short_circuit", label_num};
     auto end_label = BlockLabel{"logic_end", label_num};
-    const int left_res = NextLocalNum();
+    const int left_res = ctx_->NextLocalNum();
     // NOTE: (&& operator) If the first operand compares equal to 0, the second
     // operand is not evaluated. (|| operator)  If the first operand compares
     // unequal to 0, the second operand is not evaluated.
@@ -1106,9 +1092,9 @@ void QbeIrGenerator::Visit(const BinaryExprNode& bin_expr) {
     WriteInstr_("jnz {}, {}, {}", FuncScopeTemp{left_res}, rhs_label,
                 short_circuit_label);
     WriteLabel_(rhs_label);
-    const int res_num = NextLocalNum();
+    const int res_num = ctx_->NextLocalNum();
     bin_expr.rhs->Accept(*this);
-    const int right_num = num_recorder.NumOfPrevExpr();
+    const int right_num = ctx_->num_recorder.NumOfPrevExpr();
     WriteInstr_("{} =w {} {}, 0", FuncScopeTemp{res_num},
                 GetBinaryOperator(BinaryOperator::kNeq),
                 FuncScopeTemp{right_num});
@@ -1117,35 +1103,35 @@ void QbeIrGenerator::Visit(const BinaryExprNode& bin_expr) {
     WriteInstr_("{} =w copy {}", FuncScopeTemp{res_num},
                 bin_expr.op == BinaryOperator::kLand ? 0 : 1);
     WriteLabel_(end_label);
-    num_recorder.Record(res_num);
+    ctx_->num_recorder.Record(res_num);
   } else {
-    const int num = NextLocalNum();
+    const int num = ctx_->NextLocalNum();
     // TODO: use the correct instruction for specific data type:
     // 1. signed or unsigned: currently only supports signed integers.
     // 2. QBE base data type 'w' | 'l' | 's' | 'd': currently only supports
     // 'w'.
     bin_expr.rhs->Accept(*this);
-    const int right_num = num_recorder.NumOfPrevExpr();
+    const int right_num = ctx_->num_recorder.NumOfPrevExpr();
     WriteInstr_("{} =w {} {}, {}", FuncScopeTemp{num},
                 GetBinaryOperator(bin_expr.op), FuncScopeTemp{left_num},
                 FuncScopeTemp{right_num});
-    num_recorder.Record(num);
+    ctx_->num_recorder.Record(num);
   }
 }
 
 void QbeIrGenerator::Visit(const SimpleAssignmentExprNode& assign_expr) {
   assign_expr.lhs->Accept(*this);
-  int lhs_num = num_recorder.NumOfPrevExpr();
+  int lhs_num = ctx_->num_recorder.NumOfPrevExpr();
   assign_expr.rhs->Accept(*this);
-  int rhs_num = num_recorder.NumOfPrevExpr();
+  int rhs_num = ctx_->num_recorder.NumOfPrevExpr();
   if (assign_expr.lhs->type->IsPtr()) {
     // Assign pointer address to another pointer.
     if (assign_expr.lhs->is_global) {
       WriteInstr_("storel {}, {}", FuncScopeTemp{rhs_num},
-                  user_defined::GlobalPointer{reg_num_to_id.at(lhs_num)});
+                  user_defined::GlobalPointer{ctx_->reg_num_to_id.at(lhs_num)});
     } else {
       WriteInstr_("storel {}, {}", FuncScopeTemp{rhs_num},
-                  FuncScopeTemp{reg_num_to_id_num.at(lhs_num)});
+                  FuncScopeTemp{ctx_->reg_num_to_id_num.at(lhs_num)});
     }
   } else {
     if (assign_expr.lhs->is_global) {
@@ -1153,17 +1139,18 @@ void QbeIrGenerator::Visit(const SimpleAssignmentExprNode& assign_expr) {
       // address of `id`.
       if (dynamic_cast<ArrSubExprNode*>(assign_expr.lhs.get())) {
         WriteInstr_("storew {}, {}", FuncScopeTemp{rhs_num},
-                    FuncScopeTemp{reg_num_to_id_num.at(lhs_num)});
+                    FuncScopeTemp{ctx_->reg_num_to_id_num.at(lhs_num)});
       } else {
-        WriteInstr_("storew {}, {}", FuncScopeTemp{rhs_num},
-                    user_defined::GlobalPointer{reg_num_to_id.at(lhs_num)});
+        WriteInstr_(
+            "storew {}, {}", FuncScopeTemp{rhs_num},
+            user_defined::GlobalPointer{ctx_->reg_num_to_id.at(lhs_num)});
       }
     } else {
       WriteInstr_("storew {}, {}", FuncScopeTemp{rhs_num},
-                  FuncScopeTemp{reg_num_to_id_num.at(lhs_num)});
+                  FuncScopeTemp{ctx_->reg_num_to_id_num.at(lhs_num)});
     }
   }
-  num_recorder.Record(rhs_num);
+  ctx_->num_recorder.Record(rhs_num);
 }
 
 void QbeIrGenerator::VWrite_(fmt::string_view format, fmt::format_args args) {

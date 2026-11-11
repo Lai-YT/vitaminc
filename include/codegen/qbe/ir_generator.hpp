@@ -12,7 +12,15 @@
 #include "ast/visitor.hpp"
 #include "codegen/qbe/sigil.hpp"
 
+class QbeContext;
+
+// NOLINTBEGIN(cppcoreguidelines-special-member-functions):
+// The base class `CodeGenerator` already deletes copy and move operations.
+// The destructor is defined out-of-class using `= default` because
+// `QbeContext` is an incomplete type in this header; it is not a custom
+// destructor.
 class QbeIrGenerator : public NonModifyingVisitor {
+  // NOLINTEND(cppcoreguidelines-special-member-functions)
  public:
   void Visit(const DeclStmtNode&) override;
   void Visit(const LoopInitNode&) override;
@@ -54,10 +62,12 @@ class QbeIrGenerator : public NonModifyingVisitor {
   void Visit(const BinaryExprNode&) override;
   void Visit(const SimpleAssignmentExprNode&) override;
 
-  QbeIrGenerator(std::ostream& output) : output_{output} {}
+  QbeIrGenerator(std::ostream& output);
+  ~QbeIrGenerator() override;
 
  private:
   std::ostream& output_;
+  std::unique_ptr<QbeContext> ctx_;
 
   static constexpr auto kIndentStr = "\t";
 
