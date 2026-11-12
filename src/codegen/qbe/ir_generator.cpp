@@ -241,13 +241,14 @@ class QbeContext {
   }
 
   void PushSwitchBlock(SwitchBlock switch_block) {
-    switch_blocks_.push_back(
-        std::make_shared<SwitchBlock>(std::move(switch_block)));
+    switch_blocks_.push_back(std::move(switch_block));
   }
 
+  /// @note The returned reference is valid only until the switch block stack is
+  /// modified.
   SwitchBlock& CurrentSwitchBlock() {
     assert(!switch_blocks_.empty());
-    return *switch_blocks_.back();
+    return switch_blocks_.back();
   }
 
   void PopSwitchBlock() {
@@ -286,7 +287,7 @@ class QbeContext {
 
   /// @brief The shared states passed around during the generation of a switch.
   /// @note To allow nested switch statements, the information is stacked.
-  std::vector<std::shared_ptr<SwitchBlock>> switch_blocks_{};
+  std::vector<SwitchBlock> switch_blocks_{};
 };
 
 QbeIrGenerator::QbeIrGenerator(std::ostream& output)
