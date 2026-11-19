@@ -207,6 +207,21 @@ class QbeContext {
     jump_target_ctxs_.pop_back();
   }
 
+  void SetReturnTarget(BlockLabel target, int value_addr_num) {
+    return_target_ = std::move(target);
+    return_value_addr_num_ = value_addr_num;
+  }
+
+  const BlockLabel& CurrentReturnTarget() const {
+    assert(return_target_);
+    return *return_target_;
+  }
+
+  int CurrentReturnValueAddrNum() const {
+    assert(return_value_addr_num_);
+    return *return_value_addr_num_;
+  }
+
   /// @brief Clears values collected for the next global initializer.
   void ClearGlobalVariableInitValues() {
     global_var_init_vals_.clear();
@@ -276,6 +291,8 @@ class QbeContext {
   /// @note Blocks that allows jumping within or out of it should add its labels
   /// to this list.
   std::vector<JumpTargetContext> jump_target_ctxs_{};
+  std::optional<BlockLabel> return_target_;
+  std::optional<int> return_value_addr_num_;
 
   /// @brief Stores values from bottom level nodes and pass them to upper level
   /// nodes because global variables are required to initialize exact values at
@@ -497,6 +514,10 @@ void QbeIrGenerator::Visit(const FuncDefNode& func_def) {
   // Parameter allocations go after the start label and before the body.
   auto start_label = BlockLabel{"start", label_num};
   auto body_label = BlockLabel{"body", label_num};
+  // NOTE: A `ret` instuction is required to always be followed by `}`.
+  // The `return` statement cannot emit a `ret` directly but instead, jump to
+  // this label.
+  auto ret_label = BlockLabel{"ret", label_num};
 
   Write_("export\n");
   Write_("function w ${}(", func_def.id);
@@ -508,9 +529,18 @@ void QbeIrGenerator::Visit(const FuncDefNode& func_def) {
   }
   Write_(") {{\n");
   WriteLabel_(start_label);
+  // Allocate a return-value slot for return statement(s) to place value in.
+  const int ret_val_addr_num = ctx_->NextLocalNum();
+  WriteInstr_("{} =l alloc4 4", FuncScopeTemp{ret_val_addr_num});
+  ctx_->SetReturnTarget(ret_label, ret_val_addr_num);
   AllocMemForParams_(func_def.parameters);
   WriteLabel_(body_label);
   func_def.body->Accept(*this);
+  WriteLabel_(ret_label);
+  const int ret_num = ctx_->NextLocalNum();
+  WriteInstr_("{} =w loadw {}", FuncScopeTemp{ret_num},
+              FuncScopeTemp{ret_val_addr_num});
+  WriteInstr_("ret {}", FuncScopeTemp{ret_num});
   Write_("}}\n");
 }
 
@@ -649,7 +679,10 @@ void QbeIrGenerator::Visit(const ForStmtNode& for_stmt) {
 void QbeIrGenerator::Visit(const ReturnStmtNode& ret_stmt) {
   ret_stmt.expr->Accept(*this);
   int ret_num = ctx_->TakePrevExprNum();
-  WriteInstr_("ret {}", FuncScopeTemp{ret_num});
+  WriteInstr_("storew {}, {}", FuncScopeTemp{ret_num},
+              FuncScopeTemp{ctx_->CurrentReturnValueAddrNum()});
+  WriteInstr_("jmp {}", ctx_->CurrentReturnTarget());
+  WriteLabel_(BlockLabel{"after_return", ctx_->NextLabelNum()});
 }
 
 void QbeIrGenerator::Visit(const GotoStmtNode& goto_stmt) {
