@@ -197,17 +197,16 @@ func_def: declaration_specifiers declarator compound_stmt {
     // The declarator shall already be a function declarator.
     // We resolve its return type with the declaration specifiers and set the body.
     auto func_def = $2;
-    assert(dynamic_cast<FuncDefNode*>(func_def.get()));
-    assert(func_def->type->IsFunc());
-    const auto& func_type = dynamic_cast<FuncType&>(*func_def->type);
+    auto& func_def_node = dynamic_cast<FuncDefNode&>(*func_def);
+    auto& func_type = dynamic_cast<FuncType&>(*func_def->type);
     auto type = std::get<std::unique_ptr<Type>>($1);
     auto resolved_return_type = ResolveType(std::move(type), func_type.return_type().Clone());
     auto param_types = std::vector<std::unique_ptr<Type>>{};
-    for (auto& param : func_type.param_types()) {
+    for (const auto& param : func_type.param_types()) {
       param_types.push_back(param->Clone());
     }
     func_def->type = std::make_unique<FuncType>(std::move(resolved_return_type), std::move(param_types), func_type.IsVariadic());
-    dynamic_cast<FuncDefNode&>(*func_def).body = $3;
+    func_def_node.body = $3;
     $$ = std::unique_ptr<FuncDefNode>(dynamic_cast<FuncDefNode*>(func_def.release()));
   }
   ;
