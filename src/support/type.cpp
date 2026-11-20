@@ -143,6 +143,9 @@ std::string FuncType::ToString() const {
       str += ", ";
     }
   }
+  if (is_variadic_) {
+    str += ", ...";
+  }
   str += ")";
   return str;
 }
@@ -154,7 +157,8 @@ std::unique_ptr<Type> FuncType::Clone() const {
     cloned_param_types.push_back(param_type->Clone());
   }
   return std::make_unique<FuncType>(std::move(cloned_return_type),
-                                    std::move(cloned_param_types));
+                                    std::move(cloned_param_types),
+                                    is_variadic_);
 }
 
 std::string StructType::id() const noexcept {

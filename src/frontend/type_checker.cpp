@@ -251,10 +251,10 @@ void TypeChecker::Visit(FuncDefNode& func_def) {
   for (auto& parameter : func_def.parameters) {
     decayed_param_types.push_back(parameter->type->Clone());
   }
-  auto return_type =
-      dynamic_cast<FuncType&>(*func_def.type).return_type().Clone();
-  func_def.type = std::make_unique<FuncType>(std::move(return_type),
-                                             std::move(decayed_param_types));
+  auto& func_type = dynamic_cast<FuncType&>(*func_def.type);
+  func_def.type = std::make_unique<FuncType>(func_type.return_type().Clone(),
+                                             std::move(decayed_param_types),
+                                             func_type.IsVariadic());
   auto symbol =
       std::make_unique<SymbolEntry>(func_def.id, func_def.type->Clone());
   env_.AddSymbol(std::move(symbol), ScopeKind::kFile);
@@ -538,13 +538,18 @@ void TypeChecker::Visit(FuncCallExprNode& call_expr) {
 
   auto& param_types = func_type->param_types();
   auto& args = call_expr.args;
-  if (param_types.size() != args.size()) {
+  if (func_type->IsVariadic()) {
+    if (args.size() < param_types.size()) {
+      // TODO: too few arguments
+    }
+  } else if (args.size() != param_types.size()) {
     // TODO: argument size doesn't match
   }
 
   for (auto i = std::size_t{0}; i < args.size(); ++i) {
     args.at(i)->Accept(*this);
-    if (args.at(i)->type != param_types.at(i)) {
+    if (i < param_types.size() &&
+        !args.at(i)->type->IsConvertibleTo(*param_types.at(i))) {
       // TODO: unmatched argument type
     }
   }
