@@ -146,9 +146,11 @@ class ArrType : public Type {
 class FuncType : public Type {
  public:
   FuncType(std::unique_ptr<Type> return_type,
-           std::vector<std::unique_ptr<Type>> param_types)
+           std::vector<std::unique_ptr<Type>> param_types,
+           bool is_variadic = false)
       : return_type_{std::move(return_type)},
-        param_types_{std::move(param_types)} {}
+        param_types_{std::move(param_types)},
+        is_variadic_{is_variadic} {}
 
   const Type& return_type()  // NOLINT(readability-identifier-naming)
       const noexcept {
@@ -160,6 +162,10 @@ class FuncType : public Type {
   param_types()  // NOLINT(readability-identifier-naming)
       const noexcept {
     return param_types_;
+  }
+
+  bool IsVariadic() const {
+    return is_variadic_;
   }
 
   bool IsFunc() const noexcept override {
@@ -174,6 +180,7 @@ class FuncType : public Type {
  private:
   std::unique_ptr<Type> return_type_;
   std::vector<std::unique_ptr<Type>> param_types_;
+  bool is_variadic_;
 
   bool ConvertibleHook_(const Type& that) const noexcept override;
 };

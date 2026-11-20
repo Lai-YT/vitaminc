@@ -39,6 +39,11 @@ std::unique_ptr<Type> ResolveType(std::unique_ptr<Type> resolved_type,
 
   #include "ast/ast.hpp"
   #include "support/type.hpp"
+
+  struct ParameterList {
+    std::vector<std::unique_ptr<ParamNode>> params;
+    bool is_variadic;
+  };
 }
 
 // Placed after the usual contents of the parser header file.
@@ -84,7 +89,7 @@ std::unique_ptr<Type> ResolveType(std::unique_ptr<Type> resolved_type,
 
 %token MINUS PLUS STAR DIV MOD ASSIGN
 %token EXCLAMATION TILDE AMPERSAND QUESTION
-%token COMMA DOT ARROW SEMICOLON COLON
+%token COMMA DOT ARROW ELLIPSIS SEMICOLON COLON
 // (), {}, []
 %token LEFT_PAREN RIGHT_PAREN LEFT_CURLY RIGHT_CURLY LEFT_SQUARE RIGHT_SQUARE
 
@@ -112,7 +117,7 @@ std::unique_ptr<Type> ResolveType(std::unique_ptr<Type> resolved_type,
 %nterm <std::unique_ptr<DeclNode>> id_opt
 %nterm <std::unique_ptr<DeclStmtNode>> decl
 %nterm <std::unique_ptr<ParamNode>> parameter_declaration
-%nterm <std::vector<std::unique_ptr<ParamNode>>> parameter_type_list_opt parameter_type_list parameter_list
+%nterm <ParameterList> parameter_type_list_opt parameter_type_list parameter_list
 %nterm <std::unique_ptr<FieldNode>> struct_declaration struct_declarator struct_declarator_list
 %nterm <std::vector<std::unique_ptr<FieldNode>>> struct_declaration_list
 // The followings also declare an identifier, however, their types are not yet fully resolved.
@@ -201,7 +206,7 @@ func_def: declaration_specifiers declarator compound_stmt {
     for (auto& param : func_type.param_types()) {
       param_types.push_back(param->Clone());
     }
-    func_def->type = std::make_unique<FuncType>(std::move(resolved_return_type), std::move(param_types));
+    func_def->type = std::make_unique<FuncType>(std::move(resolved_return_type), std::move(param_types), func_type.IsVariadic());
     dynamic_cast<FuncDefNode&>(*func_def).body = $3;
     $$ = std::unique_ptr<FuncDefNode>(dynamic_cast<FuncDefNode*>(func_def.release()));
   }
@@ -709,20 +714,20 @@ direct_declarator: ID {
   /* function */
   | direct_declarator LEFT_PAREN parameter_type_list_opt RIGHT_PAREN {
     auto decl = $1;
-    auto params = $3;
+    auto param_list = $3;
     auto param_types = std::vector<std::unique_ptr<Type>>{};
-    for (const auto& param : params) {
+    for (const auto& param : param_list.params) {
       param_types.push_back(param->type->Clone());
     }
     // The return type is unknown at this point.
     auto return_type = std::make_unique<PrimType>(PrimitiveType::kUnknown);
-    auto type = std::make_unique<FuncType>(std::move(return_type), std::move(param_types));
+    auto type = std::make_unique<FuncType>(std::move(return_type), std::move(param_types), param_list.is_variadic);
     // If the direct declarator has a pointer type, this is a declaration of a function pointer, not a function.
     if (decl->type->IsPtr()) {
       decl->type = ResolveType(std::move(type), std::move(decl->type));
       $$ = std::move(decl);
     } else {
-      $$ = std::make_unique<FuncDefNode>(Loc(@1), std::move(decl->id), std::move(params), /* body */ nullptr, std::move(type));
+      $$ = std::make_unique<FuncDefNode>(Loc(@1), std::move(decl->id), std::move(param_list.params), /* body */ nullptr, std::move(type));
     }
   }
   /* TODO: identifier list */
@@ -740,21 +745,23 @@ pointer: STAR { $$ = 1; }
   ;
 
 parameter_type_list_opt: parameter_type_list { $$ = $1; }
-  | epsilon { $$ = std::vector<std::unique_ptr<ParamNode>>{}; }
+  | epsilon { $$ = ParameterList{{}, /* is_variadic */ false}; }
   ;
 
 parameter_type_list: parameter_list { $$ = $1; }
-  /* TODO: parameter list, ... */
+  | parameter_list COMMA ELLIPSIS {
+    $$ = $1;
+    $$.is_variadic = true;
+  }
   ;
 
 parameter_list: parameter_declaration {
-    $$ = std::vector<std::unique_ptr<ParamNode>>{};
-    $$.push_back($1);
+    $$ = ParameterList{{}, /* is variadic */ false};
+    $$.params.push_back($1);
   }
   | parameter_list COMMA parameter_declaration {
-    auto parameter_list = $1;
-    parameter_list.push_back($3);
-    $$ = std::move(parameter_list);
+    $$ = $1;
+    $$.params.push_back($3);
   }
   ;
 
@@ -807,12 +814,12 @@ direct_abstract_declarator: LEFT_PAREN abstract_declarator RIGHT_PAREN {
   }
   /* e.g., (*)(int, int) */
   | direct_abstract_declarator_opt LEFT_PAREN parameter_type_list_opt RIGHT_PAREN {
-    auto params = $3;
+    auto param_list = $3;
     auto param_types = std::vector<std::unique_ptr<Type>>{};
-    for (const auto& param : params) {
+    for (const auto& param : param_list.params) {
       param_types.push_back(param->type->Clone());
     }
-    auto func_type = std::make_unique<FuncType>(std::make_unique<PrimType>(PrimitiveType::kUnknown), std::move(param_types));
+    auto func_type = std::make_unique<FuncType>(std::make_unique<PrimType>(PrimitiveType::kUnknown), std::move(param_types), param_list.is_variadic);
     $$ = ResolveType(std::move(func_type), $1);
   }
   ;
@@ -898,7 +905,7 @@ std::unique_ptr<Type> ResolveType(std::unique_ptr<Type> resolved_type,
     for (const auto& param : func_type.param_types()) {
       param_types.push_back(param->Clone());
     }
-    return std::make_unique<FuncType>(std::move(resolved_type), std::move(param_types));
+    return std::make_unique<FuncType>(std::move(resolved_type), std::move(param_types), func_type.IsVariadic());
   }
   assert(false);
   return nullptr;
