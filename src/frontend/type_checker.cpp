@@ -522,20 +522,18 @@ void TypeChecker::Visit(FuncCallExprNode& call_expr) {
 
   // The function expression should have a function type or a pointer to a
   // function type.
-  // NOTE: Using shared pointer to avoid additional casting on raw pointer.
-  auto func_type = std::shared_ptr<FuncType>{};
-  if (call_expr.func_expr->type->IsFunc()) {
-    func_type = std::dynamic_pointer_cast<FuncType>(
-        std::shared_ptr<Type>{call_expr.func_expr->type->Clone()});
-  } else if (const auto* ptr_type =
-                 dynamic_cast<PtrType*>((call_expr.func_expr->type).get());
-             ptr_type->base_type().IsFunc()) {
-    func_type = std::dynamic_pointer_cast<FuncType>(
-        std::shared_ptr<Type>{ptr_type->base_type().Clone()});
-  } else {
+  const Type* func_expr_type = call_expr.func_expr->type.get();
+  if (const auto* ptr_type = dynamic_cast<const PtrType*>(func_expr_type)) {
+    func_expr_type = &ptr_type->base_type();
+  }
+
+  const auto* func_type = dynamic_cast<const FuncType*>(func_expr_type);
+  if (!func_type) {
     // TODO: called object type 'type' is not a function or function pointer
     assert(false);
+    return;
   }
+
   call_expr.type = func_type->return_type().Clone();
 
   auto& param_types = func_type->param_types();
