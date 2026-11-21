@@ -343,9 +343,8 @@ void LLVMIRGenerator::Visit(const TransUnitNode& trans_unit) {
                          "__builtin_print", module_);
 
   // Generate printf function.
-  auto args =
-      llvm::ArrayRef<llvm::Type*>{builder_.getPtrTy(), builder_.getInt32Ty()};
-  auto printf = llvm::FunctionType::get(builder_.getInt32Ty(), args, false);
+  auto printf = llvm::FunctionType::get(
+      builder_.getInt32Ty(), {builder_.getPtrTy()}, /* isVarArg */ true);
   llvm::Function::Create(printf, llvm::Function::ExternalLinkage, "printf",
                          module_);
 

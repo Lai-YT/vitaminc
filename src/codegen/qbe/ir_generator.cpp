@@ -527,6 +527,9 @@ void QbeIrGenerator::Visit(const FuncDefNode& func_def) {
       Write_(", ");
     }
   }
+  if (dynamic_cast<FuncType&>(*func_def.type).IsVariadic()) {
+    Write_(", ...");
+  }
   Write_(") {{\n");
   WriteLabel_(start_label);
   // Allocate a return-value slot for return statement(s) to place value in.

@@ -84,7 +84,8 @@ llvm::Type* LLVMIRBuilderHelper::GetLLVMType(const Type& type) {
     for (auto& param_type : func_type->param_types()) {
       param_types.push_back(GetLLVMType(*param_type));
     }
-    return llvm::FunctionType::get(return_type, param_types, false);
+    return llvm::FunctionType::get(return_type, param_types,
+                                   func_type->IsVariadic());
   }
 
   assert(false);

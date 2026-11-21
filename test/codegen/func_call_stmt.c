@@ -24,9 +24,15 @@ int unreachable_after_return2() {
   return 1;
 }
 
+int variadic(int a, int b, ...) {
+  return a + b;
+}
+
 int main() {
   __builtin_print(add_five(sum(1, 2, 3) + 4));
   __builtin_print(unreachable_after_return1());
   __builtin_print(unreachable_after_return2());
+  __builtin_print(variadic(1, 2));
+  __builtin_print(variadic(1, 2, 3));
   return 0;
 }
