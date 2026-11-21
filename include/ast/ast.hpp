@@ -203,6 +203,19 @@ struct EnumDeclNode : public DeclNode {
   std::vector<std::unique_ptr<EnumConstDeclNode>> enum_consts;
 };
 
+struct FuncDeclNode : public DeclNode {
+  FuncDeclNode(Location loc, std::string id,
+               std::vector<std::unique_ptr<ParamNode>> parameters,
+               std::unique_ptr<Type> type)
+      : DeclNode{loc, std::move(id), std::move(type)},
+        parameters{std::move(parameters)} {}
+
+  void Accept(NonModifyingVisitor&) const override;
+  void Accept(ModifyingVisitor&) override;
+
+  std::vector<std::unique_ptr<ParamNode>> parameters;
+};
+
 struct ParamNode : public DeclNode {
   using DeclNode::DeclNode;
 
@@ -210,19 +223,18 @@ struct ParamNode : public DeclNode {
   void Accept(ModifyingVisitor&) override;
 };
 
-struct FuncDefNode : public DeclNode {
+struct FuncDefNode : public FuncDeclNode {
   FuncDefNode(Location loc, std::string id,
               std::vector<std::unique_ptr<ParamNode>> parameters,
               std::unique_ptr<CompoundStmtNode> body,
-              std::unique_ptr<Type> type)
-      : DeclNode{loc, std::move(id), std::move(type)},
-        parameters{std::move(parameters)},
+              std::unique_ptr<Type> return_type)
+      : FuncDeclNode{loc, std::move(id), std::move(parameters),
+                     std::move(return_type)},
         body{std::move(body)} {}
 
   void Accept(NonModifyingVisitor&) const override;
   void Accept(ModifyingVisitor&) override;
 
-  std::vector<std::unique_ptr<ParamNode>> parameters;
   std::unique_ptr<CompoundStmtNode> body;
 };
 

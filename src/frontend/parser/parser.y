@@ -196,18 +196,17 @@ external_decl: func_def { $$ = std::make_unique<ExternDeclNode>(Loc(@1), $1); }
 func_def: declaration_specifiers declarator compound_stmt {
     // The declarator shall already be a function declarator.
     // We resolve its return type with the declaration specifiers and set the body.
-    auto func_def = $2;
-    auto& func_def_node = dynamic_cast<FuncDefNode&>(*func_def);
-    auto& func_type = dynamic_cast<FuncType&>(*func_def->type);
+    auto decl = $2;
+    auto& func_decl = dynamic_cast<FuncDeclNode&>(*decl);
+    auto& func_type = dynamic_cast<FuncType&>(*func_decl.type);
     auto type = std::get<std::unique_ptr<Type>>($1);
     auto resolved_return_type = ResolveType(std::move(type), func_type.return_type().Clone());
     auto param_types = std::vector<std::unique_ptr<Type>>{};
     for (const auto& param : func_type.param_types()) {
       param_types.push_back(param->Clone());
     }
-    func_def->type = std::make_unique<FuncType>(std::move(resolved_return_type), std::move(param_types), func_type.IsVariadic());
-    func_def_node.body = $3;
-    $$ = std::unique_ptr<FuncDefNode>(dynamic_cast<FuncDefNode*>(func_def.release()));
+    auto resolved_type = std::make_unique<FuncType>(std::move(resolved_return_type), std::move(param_types), func_type.IsVariadic());
+    $$ = std::make_unique<FuncDefNode>(func_decl.loc, std::move(func_decl.id), std::move(func_decl.parameters), $3, std::move(resolved_type));
   }
   ;
 
@@ -726,7 +725,7 @@ direct_declarator: ID {
       decl->type = ResolveType(std::move(type), std::move(decl->type));
       $$ = std::move(decl);
     } else {
-      $$ = std::make_unique<FuncDefNode>(Loc(@1), std::move(decl->id), std::move(param_list.params), /* body */ nullptr, std::move(type));
+      $$ = std::make_unique<FuncDeclNode>(Loc(@1), std::move(decl->id), std::move(param_list.params), std::move(type));
     }
   }
   /* TODO: identifier list */

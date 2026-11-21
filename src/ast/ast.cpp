@@ -116,6 +116,14 @@ void EnumDeclNode::Accept(ModifyingVisitor& v) {
   v.Visit(*this);
 }
 
+void FuncDeclNode::Accept(NonModifyingVisitor& v) const {
+  v.Visit(*this);
+}
+
+void FuncDeclNode::Accept(ModifyingVisitor& v) {
+  v.Visit(*this);
+}
+
 void ParamNode::Accept(NonModifyingVisitor& v) const {
   v.Visit(*this);
 }
