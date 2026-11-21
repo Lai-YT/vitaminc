@@ -201,6 +201,34 @@ void TypeChecker::Visit(EnumDeclNode& enum_decl) {
   }
 }
 
+void TypeChecker::Visit(FuncDeclNode& func_decl) {
+  if (auto symbol = env_.ProbeSymbol(func_decl.id); symbol) {
+    if (!func_decl.type->IsEqual(*symbol->type)) {
+      // TODO: conflicting types
+      assert(false);
+    }
+    return;
+  }
+
+  env_.PushScope(ScopeKind::kParam);
+  for (auto& parameter : func_decl.parameters) {
+    parameter->Accept(*this);
+  }
+  env_.PopScope();
+
+  auto decayed_param_types = std::vector<std::unique_ptr<Type>>{};
+  for (auto& parameter : func_decl.parameters) {
+    decayed_param_types.push_back(parameter->type->Clone());
+  }
+  auto& func_type = dynamic_cast<FuncType&>(*func_decl.type);
+  func_decl.type = std::make_unique<FuncType>(func_type.return_type().Clone(),
+                                              std::move(decayed_param_types),
+                                              func_type.IsVariadic());
+  auto symbol =
+      std::make_unique<SymbolEntry>(func_decl.id, func_decl.type->Clone());
+  env_.AddSymbol(std::move(symbol), ScopeKind::kFile);
+}
+
 void TypeChecker::Visit(ParamNode& parameter) {
   if (env_.ProbeSymbol(parameter.id)) {
     // TODO: redefinition of 'id'
@@ -217,8 +245,7 @@ void TypeChecker::Visit(ParamNode& parameter) {
     }
     auto symbol =
         std::make_unique<SymbolEntry>(parameter.id, parameter.type->Clone());
-    // TODO: May be parameter scope once we support function prototypes.
-    env_.AddSymbol(std::move(symbol), ScopeKind::kBlock);
+    env_.AddSymbol(std::move(symbol), env_.CurrentScopeKind());
   }
 }
 
@@ -234,8 +261,9 @@ std::unordered_map<std::string, bool>
 }  // namespace
 
 void TypeChecker::Visit(FuncDefNode& func_def) {
-  if (env_.ProbeSymbol(func_def.id)) {
-    // TODO: redefinition of function id
+  if (auto symbol = env_.ProbeSymbol(func_def.id);
+      symbol && symbol->is_function_definition) {
+    // TODO: redefinition of function
   }
 
   env_.PushScope(ScopeKind::kFunc);

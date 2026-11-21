@@ -1,0 +1,30 @@
+TransUnitNode <1:1>
+  ExternDeclNode <1:1>
+    DeclStmtNode <1:1>
+      FuncDeclNode <1:5> add: int (int, int)
+        ParamNode <1:9> : int
+        ParamNode <1:14> : int
+  ExternDeclNode <2:1>
+    DeclStmtNode <2:1>
+      FuncDeclNode <2:5> add: int (int, int)
+        ParamNode <2:13> a: int
+        ParamNode <2:20> b: int
+  ExternDeclNode <4:1>
+    FuncDefNode <4:5> main: int ()
+      CompoundStmtNode <4:12>
+        ReturnStmtNode <5:3>
+          FuncCallExprNode <5:10> int
+            IdExprNode <5:10> add: int (int, int)
+            ArgExprNode <5:14> int
+              IntConstExprNode <5:14> 1: int
+            ArgExprNode <5:17> int
+              IntConstExprNode <5:17> 2: int
+  ExternDeclNode <8:1>
+    FuncDefNode <8:5> add: int (int, int)
+      ParamNode <8:13> a: int
+      ParamNode <8:20> b: int
+      CompoundStmtNode <8:23>
+        ReturnStmtNode <9:3>
+          BinaryExprNode <9:12> int +
+            IdExprNode <9:10> a: int
+            IdExprNode <9:14> b: int

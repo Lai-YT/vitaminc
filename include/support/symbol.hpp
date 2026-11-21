@@ -11,9 +11,14 @@
 struct SymbolEntry {
   std::string id;
   std::unique_ptr<Type> type;
+  /// @brief Whether the symbol belongs to a function that is defined.
+  bool is_function_definition;
 
-  SymbolEntry(std::string id, std::unique_ptr<Type> expr_type)
-      : id{std::move(id)}, type{std::move(expr_type)} {}
+  SymbolEntry(std::string id, std::unique_ptr<Type> expr_type,
+              bool is_function_definition = false)
+      : id{std::move(id)},
+        type{std::move(expr_type)},
+        is_function_definition{is_function_definition} {}
 };
 
 struct TypeEntry {

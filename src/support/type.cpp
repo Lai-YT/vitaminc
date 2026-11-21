@@ -117,7 +117,7 @@ bool FuncType::IsEqual(const Type& that) const noexcept {
         return false;
       }
     }
-    return true;
+    return that_func->is_variadic_ == is_variadic_;
   }
   return false;
 }

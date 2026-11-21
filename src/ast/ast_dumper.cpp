@@ -180,6 +180,17 @@ void AstDumper::Visit(const EnumConstDeclNode& enum_const_decl) {
   }
 }
 
+void AstDumper::Visit(const FuncDeclNode& func_decl) {
+  std::cout << indenter_.Indent() << "FuncDeclNode <" << func_decl.loc << "> "
+            << func_decl.id << ": " << func_decl.type->ToString() << '\n';
+
+  indenter_.IncreaseLevel();
+  for (const auto& parameter : func_decl.parameters) {
+    parameter->Accept(*this);
+  }
+  indenter_.DecreaseLevel();
+}
+
 void AstDumper::Visit(const ParamNode& parameter) {
   std::cout << indenter_.Indent() << "ParamNode <" << parameter.loc << "> "
             << parameter.id << ": " << parameter.type->ToString() << '\n';
