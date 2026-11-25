@@ -233,16 +233,7 @@ void TypeChecker::Visit(ParamNode& parameter) {
   if (env_.ProbeSymbol(parameter.id)) {
     // TODO: redefinition of 'id'
   } else {
-    // NOTE: Any parameter of array or function type is adjusted to the
-    // corresponding pointer type.
-    if (parameter.type->IsArr()) {
-      // Decay to simple pointer type.
-      parameter.type = std::make_unique<PtrType>(
-          dynamic_cast<ArrType&>(*parameter.type).element_type().Clone());
-    } else if (parameter.type->IsFunc()) {
-      // Decay to function pointer type.
-      parameter.type = std::make_unique<PtrType>(parameter.type->Clone());
-    }
+    parameter.type = parameter.type->Decay();
     auto symbol =
         std::make_unique<SymbolEntry>(parameter.id, parameter.type->Clone());
     env_.AddSymbol(std::move(symbol), env_.CurrentScopeKind());

@@ -87,6 +87,10 @@ bool ArrType::IsEqual(const Type& that) const noexcept {
   return false;
 }
 
+std::unique_ptr<Type> ArrType::Decay() const noexcept {
+  return std::make_unique<PtrType>(element_type_->Clone());
+}
+
 /// @note The size of an array is (size of base type) * (number of elements).
 std::size_t ArrType::size() const {
   return element_type_->size() * len_;
@@ -120,6 +124,10 @@ bool FuncType::IsEqual(const Type& that) const noexcept {
     return that_func->is_variadic_ == is_variadic_;
   }
   return false;
+}
+
+std::unique_ptr<Type> FuncType::Decay() const noexcept {
+  return std::make_unique<PtrType>(this->Clone());
 }
 
 bool FuncType::ConvertibleHook_(const Type& that) const noexcept {

@@ -51,6 +51,12 @@ class Type {
     return IsEqual(that) || ConvertibleHook_(that);
   }
 
+  /// @note Types that decay when using as parameters should implement their own
+  /// decay rule.
+  virtual std::unique_ptr<Type> Decay() const noexcept {
+    return this->Clone();
+  }
+
   virtual std::size_t size()  // NOLINT(readability-identifier-naming)
       const = 0;
   virtual std::string ToString() const = 0;
@@ -132,6 +138,7 @@ class ArrType : public Type {
   }
 
   bool IsEqual(const Type& that) const noexcept override;
+  std::unique_ptr<Type> Decay() const noexcept override;
   std::size_t size() const override;
   std::string ToString() const override;
   std::unique_ptr<Type> Clone() const override;
@@ -173,6 +180,7 @@ class FuncType : public Type {
   }
 
   bool IsEqual(const Type& that) const noexcept override;
+  std::unique_ptr<Type> Decay() const noexcept override;
   std::size_t size() const override;
   std::string ToString() const override;
   std::unique_ptr<Type> Clone() const override;
