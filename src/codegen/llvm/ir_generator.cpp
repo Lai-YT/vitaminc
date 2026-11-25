@@ -180,7 +180,7 @@ void LLVMIRGenerator::Visit(const VarDeclNode& decl) {
       const_val = llvm::dyn_cast<llvm::Constant>(val);
       assert(const_val);
     } else {
-      const_val = llvm::ConstantInt::get(builder_.getInt32Ty(), 0, true);
+      const_val = llvm::Constant::getNullValue(var_type);
     }
     global_var->setInitializer(const_val);
     id_to_val[decl.id] = global_var;
@@ -606,7 +606,6 @@ void LLVMIRGenerator::Visit(const IntConstExprNode& int_expr) {
   val_recorder.Record(val);
 }
 
-// builtin_print call
 void LLVMIRGenerator::Visit(const ArgExprNode& arg_expr) {
   arg_expr.arg->Accept(*this);
 }
@@ -614,14 +613,30 @@ void LLVMIRGenerator::Visit(const ArgExprNode& arg_expr) {
 void LLVMIRGenerator::Visit(const ArrSubExprNode& arr_sub_expr) {
   arr_sub_expr.arr->Accept(*this);
   auto val = val_recorder.ValOfPrevExpr();
-  auto base_addr = val_to_id_addr.at(val);
-  auto arr_type = builder_helper_.GetLLVMType(*(arr_sub_expr.arr->type));
+  auto type = builder_helper_.GetLLVMType(*(arr_sub_expr.arr->type));
   arr_sub_expr.index->Accept(*this);
-  auto& index = dynamic_cast<IntConstExprNode&>(*arr_sub_expr.index);
 
-  auto res_addr = builder_.CreateConstInBoundsGEP2_32(arr_type, base_addr, 0,
-                                                      (unsigned int)index.val);
-  auto res_val = builder_.CreateLoad(arr_type->getArrayElementType(), res_addr);
+  auto idx_list = std::vector<llvm::Value*>{};
+  llvm::Type* elem_type = nullptr;
+  llvm::Type* gep_type = nullptr;
+  llvm::Value* base_addr = nullptr;
+  if (type->isArrayTy()) {
+    base_addr = val_to_id_addr.at(val);
+    gep_type = type;
+    idx_list = {llvm::ConstantInt::get(builder_.getInt32Ty(), 0),
+                val_recorder.ValOfPrevExpr()};
+    elem_type = type->getArrayElementType();
+  } else {
+    assert(type->isPointerTy());
+    const auto& ptr_type =
+        dynamic_cast<PtrType&>(*arr_sub_expr.arr->type);
+    base_addr = val;
+    elem_type = builder_helper_.GetLLVMType(ptr_type.base_type());
+    gep_type = elem_type;
+    idx_list = {val_recorder.ValOfPrevExpr()};
+  }
+  auto res_addr = builder_.CreateGEP(gep_type, base_addr, idx_list);
+  auto res_val = builder_.CreateLoad(elem_type, res_addr);
   val_to_id_addr[res_val] = res_addr;
   val_recorder.Record(res_val);
 }
@@ -786,9 +801,10 @@ void LLVMIRGenerator::Visit(const UnaryExprNode& unary_expr) {
       val_recorder.Record(res);
     } break;
     case UnaryOperator::kAddr: {
-      if (std::get<std::unique_ptr<ExprNode>>(unary_expr.operand)
-              ->type->IsFunc()) {
-        // No-op; the value is still the function itself.
+      if (const auto& operand_type =
+              std::get<std::unique_ptr<ExprNode>>(unary_expr.operand)->type;
+          operand_type->IsFunc() || operand_type->IsArr()) {
+        // No-op; the value is still the function/array itself.
         break;
       }
       auto operand = val_recorder.ValOfPrevExpr();

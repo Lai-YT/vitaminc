@@ -879,8 +879,13 @@ void QbeIrGenerator::Visit(const IdExprNode& id_expr) {
   }
   if (id_expr.is_global) {
     int reg_num = ctx_->NextLocalNum();
-    WriteInstr_("{} =w loadw {}", FuncScopeTemp{reg_num},
-                user_defined::GlobalPointer{id_expr.id});
+    if (id_expr.type->IsPtr()) {
+      WriteInstr_("{} =l loadl {}", FuncScopeTemp{reg_num},
+                  user_defined::GlobalPointer{id_expr.id});
+    } else {
+      WriteInstr_("{} =w loadw {}", FuncScopeTemp{reg_num},
+                  user_defined::GlobalPointer{id_expr.id});
+    }
     ctx_->RecordPrevExprNum(reg_num);
     ctx_->SetGlobalIdForTemp(reg_num, id_expr.id);
   } else {
@@ -932,21 +937,35 @@ void QbeIrGenerator::Visit(const ArrSubExprNode& arr_sub_expr) {
   // e.g. int a[3]
   // a[1]'s offset = 1 * 4 (int size)
   const int offset = ctx_->NextLocalNum();
-  const auto& arr_type = dynamic_cast<ArrType&>(*arr_sub_expr.arr->type);
+  std::size_t elem_size = 0;
+  if (const auto* arr_type =
+          dynamic_cast<ArrType*>(arr_sub_expr.arr->type.get())) {
+    elem_size = arr_type->element_type().size();
+  } else if (const auto* ptr_type =
+                 dynamic_cast<PtrType*>(arr_sub_expr.arr->type.get())) {
+    elem_size = ptr_type->base_type().size();
+  } else {
+    assert(false);
+  }
   WriteInstr_("{} =l mul {}, {}", FuncScopeTemp{offset},
-              FuncScopeTemp{extended_num}, arr_type.element_type().size());
+              FuncScopeTemp{extended_num}, elem_size);
 
   // res_addr = base_addr + offset
   const int res_addr_num = ctx_->NextLocalNum();
-  if (arr_sub_expr.is_global) {
-    const auto id = ctx_->GetGlobalIdForTemp(reg_num);
-    WriteInstr_("{} =l add {}, {}", FuncScopeTemp{res_addr_num},
-                user_defined::GlobalPointer{id}, FuncScopeTemp{offset});
+  if (dynamic_cast<ArrType*>(arr_sub_expr.arr->type.get())) {
+    if (arr_sub_expr.is_global) {
+      const auto id = ctx_->GetGlobalIdForTemp(reg_num);
+      WriteInstr_("{} =l add {}, {}", FuncScopeTemp{res_addr_num},
+                  user_defined::GlobalPointer{id}, FuncScopeTemp{offset});
+    } else {
+      const int base_addr = ctx_->GetLValueAddrNumForTemp(reg_num);
+      WriteInstr_("{} =l add {}, {}", FuncScopeTemp{res_addr_num},
+                  FuncScopeTemp{base_addr}, FuncScopeTemp{offset});
+    }
   } else {
-    // address of the first element
-    const int base_addr = ctx_->GetLValueAddrNumForTemp(reg_num);
+    // A pointer expression evaluates to the address of its first element.
     WriteInstr_("{} =l add {}, {}", FuncScopeTemp{res_addr_num},
-                FuncScopeTemp{base_addr}, FuncScopeTemp{offset});
+                FuncScopeTemp{reg_num}, FuncScopeTemp{offset});
   }
 
   // load value from res_addr
@@ -1128,10 +1147,6 @@ void QbeIrGenerator::Visit(const UnaryExprNode& unary_expr) {
         // No-op; the function itself already evaluates to the address.
         break;
       }
-      // NOTE: The operand of the address-of operator must be an lvalue, and we
-      // do not support arrays now, so it must have been backed by an id.
-      assert(dynamic_cast<IdExprNode*>(operand.get()));
-      // The address of the id is the id itself.
       const int reg_num = ctx_->TakePrevExprNum();
       const int id_num = ctx_->GetLValueAddrNumForTemp(reg_num);
       // Since each expression has to generate a temporary, we need to copy the
