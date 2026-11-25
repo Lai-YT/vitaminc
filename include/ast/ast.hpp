@@ -548,6 +548,7 @@ struct ArrSubExprNode : public ExprNode {
   void Accept(NonModifyingVisitor&) const override;
   void Accept(ModifyingVisitor&) override;
 
+  /// @note Doesn't necessarily have to be an `array`.
   std::unique_ptr<ExprNode> arr;
   std::unique_ptr<ExprNode> index;
 };

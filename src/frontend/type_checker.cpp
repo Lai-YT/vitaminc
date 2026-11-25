@@ -513,9 +513,24 @@ void TypeChecker::Visit(ArgExprNode& arg_expr) {
 void TypeChecker::Visit(ArrSubExprNode& arr_sub_expr) {
   arr_sub_expr.arr->Accept(*this);
   arr_sub_expr.index->Accept(*this);
-  const auto& arr_type = dynamic_cast<ArrType&>(*arr_sub_expr.arr->type);
-  // arr_sub_expr should have the element type of the array.
-  arr_sub_expr.type = arr_type.element_type().Clone();
+  if (const auto* arr_type =
+          dynamic_cast<ArrType*>(arr_sub_expr.arr->type.get())) {
+    arr_sub_expr.type = arr_type->element_type().Clone();
+    if (const auto* int_const_expr =
+            dynamic_cast<IntConstExprNode*>(arr_sub_expr.index.get());
+        int_const_expr &&
+        (int_const_expr->val < 0 ||
+         static_cast<std::size_t>(int_const_expr->val) >= arr_type->len())) {
+      // TODO: out of bound
+      assert(false);
+    }
+  } else if (const auto& ptr_type =
+                 dynamic_cast<PtrType*>(arr_sub_expr.arr->type.get())) {
+    arr_sub_expr.type = ptr_type->base_type().Clone();
+  } else {
+    // TODO: only array and pointer can be subscripted
+    assert(false);
+  }
   arr_sub_expr.is_global = arr_sub_expr.arr->is_global;
 }
 
