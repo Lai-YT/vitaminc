@@ -47,7 +47,7 @@ TransUnitNode <1:1>
               IdDesNode <23:67> square
               IntConstExprNode <23:76> 4: int
         DeclStmtNode <25:3>
-          VarDeclNode <25:15> a: union shape
+          RecordVarDeclNode <25:15> a: union shape
           VarDeclNode <25:19> b: union shape*
           ArrDeclNode <25:22> c: union shape[3]
         ExprStmtNode <27:3>

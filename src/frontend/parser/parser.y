@@ -459,13 +459,17 @@ decl: declaration_specifiers init_declarator_list_opt SEMICOLON {
       } else {
         auto& rec_decl = dynamic_cast<RecordDeclNode&>(*decl);
 
-        if (!init_decl_list.empty()) {
-          for (auto& init_decl : init_decl_list) {
-            if (init_decl) {
-              init_decl->type = ResolveType(rec_decl.type->Clone(), std::move(init_decl->type));
+        for (auto& init_decl : init_decl_list) {
+          if (init_decl) {
+            init_decl->type = ResolveType(rec_decl.type->Clone(), std::move(init_decl->type));
+            // Convert uninitialized record variables.
+            if (auto* var_decl = dynamic_cast<VarDeclNode*>(init_decl.get());
+                var_decl &&
+                (var_decl->type->IsStruct() || var_decl->type->IsUnion())) {
+                init_decl = std::make_unique<RecordVarDeclNode>(var_decl->loc, std::move(var_decl->id), std::move(var_decl->type), std::vector<std::unique_ptr<InitExprNode>>{});
             }
-            decl_list.push_back(std::move(init_decl));
           }
+          decl_list.push_back(std::move(init_decl));
         }
 
         auto rec_type_id = dynamic_cast<RecordType&>(*rec_decl.type).id();

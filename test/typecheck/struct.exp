@@ -46,7 +46,7 @@ TransUnitNode <1:1>
               IdDesNode <24:44> year
               IntConstExprNode <24:51> 1999: int
         DeclStmtNode <26:3>
-          VarDeclNode <26:16> a: struct birth
+          RecordVarDeclNode <26:16> a: struct birth
           VarDeclNode <26:20> b: struct birth*
           ArrDeclNode <26:23> c: struct birth[3]
         ExprStmtNode <28:3>
@@ -57,7 +57,7 @@ TransUnitNode <1:1>
             FieldNode <31:9> lion: int
             FieldNode <32:9> tiger: int
             FieldNode <33:9> giraffe: int
-          VarDeclNode <34:5> zoo: struct animal
+          RecordVarDeclNode <34:5> zoo: struct animal
         DeclStmtNode <36:3>
           RecordDeclNode <36:10> struct book definition
             FieldNode <37:9> fiction: int
