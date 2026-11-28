@@ -74,16 +74,24 @@ TransUnitNode <1:1>
               IdDesNode <43:6> history
               IntConstExprNode <43:16> 500: int
         DeclStmtNode <46:3>
-          RecordVarDeclNode <49:5> p: struct
+          RecordVarDeclNode <49:5> p1: struct
         ExprStmtNode <50:3>
-          SimpleAssignmentExprNode <50:7> int
+          SimpleAssignmentExprNode <50:8> int
             RecordMemExprNode <50:3> .x: int
-              IdExprNode <50:3> p: struct
-            IntConstExprNode <50:9> 1: int
+              IdExprNode <50:3> p1: struct
+            IntConstExprNode <50:10> 1: int
         ExprStmtNode <51:3>
-          SimpleAssignmentExprNode <51:7> int
+          SimpleAssignmentExprNode <51:8> int
             RecordMemExprNode <51:3> .y: int
-              IdExprNode <51:3> p: struct
-            IntConstExprNode <51:9> 1: int
-        ReturnStmtNode <53:3>
-          IntConstExprNode <53:10> 0: int
+              IdExprNode <51:3> p1: struct
+            IntConstExprNode <51:10> 1: int
+        DeclStmtNode <53:3>
+          RecordVarDeclNode <55:5> p2: struct
+            InitExprNode <55:12> int
+              IdDesNode <55:13> x
+              IntConstExprNode <55:17> 2: int
+            InitExprNode <55:12> int
+              IdDesNode <55:21> y
+              IntConstExprNode <55:25> 2: int
+        ReturnStmtNode <57:3>
+          IntConstExprNode <57:10> 0: int

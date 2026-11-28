@@ -46,9 +46,13 @@ int main() {
   struct {
     int x;
     int y;
-  } p;
-  p.x = 1;
-  p.y = 1;
+  } p1;
+  p1.x = 1;
+  p1.y = 1;
+
+  struct {
+    int x, y;
+  } p2 = { .x = 2, .y = 2 };
 
   return 0;
 }

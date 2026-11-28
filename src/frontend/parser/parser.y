@@ -118,8 +118,8 @@ std::unique_ptr<Type> ResolveType(std::unique_ptr<Type> resolved_type,
 %nterm <std::unique_ptr<DeclStmtNode>> decl
 %nterm <std::unique_ptr<ParamNode>> parameter_declaration
 %nterm <ParameterList> parameter_type_list_opt parameter_type_list parameter_list
-%nterm <std::unique_ptr<FieldNode>> struct_declaration struct_declarator struct_declarator_list
-%nterm <std::vector<std::unique_ptr<FieldNode>>> struct_declaration_list
+%nterm <std::unique_ptr<FieldNode>> struct_declarator
+%nterm <std::vector<std::unique_ptr<FieldNode>>> struct_declaration struct_declaration_list struct_declarator_list
 // The followings also declare an identifier, however, their types are not yet fully resolved.
 %nterm <std::unique_ptr<DeclNode>> declarator direct_declarator init_declarator
 %nterm <std::vector<std::unique_ptr<DeclNode>>> init_declarator_list_opt init_declarator_list
@@ -582,27 +582,33 @@ struct_or_union_specifier: struct_or_union id_opt LEFT_CURLY struct_declaration_
   }
   ;
 
-struct_declaration_list: struct_declaration {
-    $$ = std::vector<std::unique_ptr<FieldNode>>{};
-    $$.push_back($1);
-  }
+struct_declaration_list: struct_declaration { $$ = $1; }
   | struct_declaration_list struct_declaration {
     $$ = $1;
-    $$.push_back($2);
+    auto fields = $2;
+    $$.insert($$.end(), std::make_move_iterator(fields.begin()), std::make_move_iterator(fields.end()));
   }
   ;
 
 /* TODO: struct_declarator_list_opt */
 struct_declaration: specifier_qualifier_list struct_declarator_list SEMICOLON {
     auto type = $1;
-    auto decl = $2;
-    decl->type = ResolveType(std::move(type), std::move(decl->type));
-    $$ = std::move(decl);
+    auto fields = $2;
+    for (auto& field : fields) {
+      field->type = ResolveType(type->Clone(), std::move(field->type));
+    }
+    $$ = std::move(fields);
   }
   ;
 
-struct_declarator_list: struct_declarator { $$ = $1; }
-  | struct_declarator_list COMMA struct_declarator
+struct_declarator_list: struct_declarator {
+    $$ = std::vector<std::unique_ptr<FieldNode>>{};
+    $$.push_back($1);
+  }
+  | struct_declarator_list COMMA struct_declarator {
+    $$ = $1;
+    $$.push_back($3);
+  }
   ;
 
 /* TODO: declarator_opt COLON const_expr */
