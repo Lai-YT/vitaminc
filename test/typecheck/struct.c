@@ -43,5 +43,12 @@ int main() {
     .history = 500,
   };
 
+  struct {
+    int x;
+    int y;
+  } p;
+  p.x = 1;
+  p.y = 1;
+
   return 0;
 }

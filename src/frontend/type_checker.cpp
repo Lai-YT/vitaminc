@@ -117,7 +117,9 @@ void TypeChecker::Visit(RecordDeclNode& record_decl) {
     //    int num;
     // };
     // If no, then it is the redefinition of 'id'.
-  } else {
+    assert(false);
+  }
+  if (!record_decl.id.empty()) {
     auto decl_type =
         std::make_unique<TypeEntry>(record_decl.id, record_decl.type->Clone());
 
@@ -142,11 +144,18 @@ void TypeChecker::Visit(RecordVarDeclNode& record_var_decl) {
     // struct birth bd1 { .date = 1 }; // RecordVarDeclNode -> search type entry
     // to update its type.
     // record_type_id is "birth" in the above example.
-    auto record_type_id = dynamic_cast<RecordType&>(*record_var_decl.type).id();
-    auto record_type = env_.LookUpType(record_type_id);
-    assert(record_type);
-    auto symbol = std::make_unique<SymbolEntry>(record_var_decl.id,
-                                                record_type->type->Clone());
+    std::unique_ptr<Type> record_type = nullptr;
+    if (auto record_type_id =
+            dynamic_cast<RecordType&>(*record_var_decl.type).id();
+        !record_type_id.empty()) {
+      record_type = env_.LookUpType(record_type_id)->type->Clone();
+    } else {
+      // NOTE: unnamed types should always be defined at appearance; no
+      // resolution required.
+      record_type = record_var_decl.type->Clone();
+    }
+    auto symbol =
+        std::make_unique<SymbolEntry>(record_var_decl.id, record_type->Clone());
 
     // TODO: type check between fields and initialized members.
     for (auto& init : record_var_decl.inits) {
@@ -161,7 +170,7 @@ void TypeChecker::Visit(RecordVarDeclNode& record_var_decl) {
       id_is_global[record_var_decl.id] = true;
     }
 
-    record_var_decl.type = record_type->type->Clone();
+    record_var_decl.type = record_type->Clone();
   }
 }
 
